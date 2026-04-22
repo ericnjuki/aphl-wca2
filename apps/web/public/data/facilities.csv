@@ -1,0 +1,13 @@
+facility_code,facility_name,facility_type,region_code
+MNH,Muhimbili National Hospital,National Referral Hospital,DSM
+AKH-DSM,Aga Khan Hospital Dar es Salaam,Private Hospital,DSM
+ISL,Islamabad Hospital,Private Hospital,DSM
+TMJ,Temeke Municipal Hospital,Regional Hospital,DSM
+AMN,Amana Regional Referral Hospital,Regional Hospital,DSM
+MWZ-RRH,Mwanza Regional Referral Hospital,Regional Hospital,MWZ
+AKH-MWZ,Aga Khan Hospital Mwanza,Private Hospital,MWZ
+ARU-RRH,Arusha Regional Referral Hospital,Regional Hospital,ARU
+MTI,Mount Meru Regional Referral Hospital,Regional Hospital,ARU
+KCMC,Kilimanjaro Christian Medical Centre,Referral Hospital,TNG
+DOD-RRH,Dodoma Regional Referral Hospital,Regional Hospital,DOD
+MBY-RRH,Mbeya Regional Referral Hospital,Regional Hospital,MBY

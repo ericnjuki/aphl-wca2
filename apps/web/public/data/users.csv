@@ -1,0 +1,9 @@
+first_name,last_name,national_id,id_type,email,facility_code,department_code,role_code,title_code
+Amina,Hassan,19900101-12345,NRC,amina.hassan@example.com,MNH,LAB,SR-MLS,MS
+John,Mwangi,19851215-67890,NRC,john.mwangi@example.com,MNH,LAB,MLS,MR
+Fatuma,Salim,19920720-11111,NRC,fatuma.salim@example.com,AKH-DSM,PHARM,PHARM,MRS
+David,Ochieng,19880305-22222,NRC,david.ochieng@example.com,AKH-DSM,MED,MED-OFFICER,DR
+Grace,Kimaro,19950812-33333,NRC,grace.kimaro@example.com,MWZ-RRH,NURS,NURSE,MS
+Peter,Mbogo,19830625-44444,NRC,peter.mbogo@example.com,MWZ-RRH,LAB,LAB-MGR,MR
+Zuhura,Ally,19910430-55555,NRC,zuhura.ally@example.com,ARU-RRH,PHARM,SR-PHARM,MS
+Emmanuel,Ngowi,19870917-66666,NRC,emmanuel.ngowi@example.com,KCMC,MED,SPEC,DR

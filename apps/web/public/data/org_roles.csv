@@ -1,0 +1,19 @@
+role_code,role_name
+LAB-DIR,Laboratory Director
+LAB-MGR,Laboratory Manager
+SR-MLS,Senior Medical Laboratory Scientist
+MLS,Medical Laboratory Scientist
+LAB-TECH,Laboratory Technician
+PHARM-DIR,Pharmacy Director
+PHARM-MGR,Pharmacy Manager
+SR-PHARM,Senior Pharmacist
+PHARM,Pharmacist
+PHARM-TECH,Pharmacy Technician
+CNO,Chief Nursing Officer
+DNS,Director of Nursing Services
+SR-NURSE,Senior Nurse
+NURSE,Registered Nurse
+ENROL-NURSE,Enrolled Nurse
+MED-OFFICER,Medical Officer
+SPEC,Specialist
+CONS,Consultant

@@ -1,0 +1,18 @@
+department_code,department_name
+LAB,Laboratory
+PHARM,Pharmacy
+NURS,Nursing
+MED,Medical
+SURG,Surgery
+OBS,Obstetrics & Gynaecology
+PAED,Paediatrics
+RADIOL,Radiology
+ANAE,Anaesthesia
+OPD,Outpatient Department
+EMER,Emergency
+ICU,Intensive Care Unit
+PATH,Pathology
+ADMIN,Administration
+HR,Human Resources
+FIN,Finance
+IT,Information Technology

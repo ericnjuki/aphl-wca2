@@ -1,0 +1,50 @@
+{
+  "name": "@workforce-competency/api",
+  "version": "1.0.0",
+  "description": "Workforce Competency REST API",
+  "main": "dist/server.js",
+  "type": "commonjs",
+  "scripts": {
+    "dev": "nodemon",
+    "build": "tsc",
+    "start": "node dist/server.js",
+    "typecheck": "tsc --noEmit",
+    "lint": "echo 'no lint configured for api'",
+    "clean": "rimraf dist node_modules"
+  },
+  "dependencies": {
+    "bcryptjs": "^3.0.3",
+    "compression": "^1.8.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.5.0",
+    "express": "^5.1.0",
+    "express-rate-limit": "^7.5.0",
+    "express-session": "^1.19.0",
+    "helmet": "^8.0.0",
+    "morgan": "^1.10.0",
+    "sql.js": "^1.12.0"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "^3.0.0",
+    "@types/compression": "^1.7.5",
+    "@types/cors": "^2.8.17",
+    "@types/express": "^5.0.3",
+    "@types/express-session": "^1.18.2",
+    "@types/morgan": "^1.9.9",
+    "@types/node": "^22.14.0",
+    "@types/sql.js": "^1.4.9",
+    "nodemon": "^3.1.9",
+    "ts-node": "^10.9.2",
+    "typescript": "~5.7.2"
+  },
+  "nodemonConfig": {
+    "watch": [
+      "src"
+    ],
+    "ext": "ts",
+    "exec": "ts-node --files src/server.ts"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC"
+}

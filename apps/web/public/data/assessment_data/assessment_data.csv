@@ -1,0 +1,21 @@
+﻿id,assessment_code,assessment_name
+1,QMS,Quality Management System
+2,ETH,Ethics
+3,MLD,Management and Leadership
+4,COM,Communication
+5,SEC,Security
+6,EMR,Emergency Management and Response
+7,WFT,Workforce Training
+8,GEN,General Laboratory Practice
+9,SAF,Safety domain
+10,SRV,Surveillance
+11,INF,Informatics
+12,MCB,Microbiology
+13,CHM,Chemistry
+14,BIO,Bioinformatics
+15,RES,Research
+16,SPH,Potential Hazards
+17,SHC,Hazard Control
+18,SDR,Documents and Records
+19,SAC,Administrative Controls
+20,SCT,Communication and Training
