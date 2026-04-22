@@ -11,6 +11,13 @@ import apiRouter from './routes/index';
 
 const app = express();
 
+// Honour X-Forwarded-* headers from the reverse proxy (nginx). Without this
+// Express sees every request as coming from the proxy's IP and treats HTTPS
+// requests as HTTP, which breaks secure cookies and skews rate limiting.
+if (env.trustProxy > 0) {
+  app.set('trust proxy', env.trustProxy);
+}
+
 // ── Security & transport ──────────────────────────────────────────────────────
 // `crossOriginResourcePolicy: 'cross-origin'` is required because the API and
 // the web app are served from different origins (ports) during development —

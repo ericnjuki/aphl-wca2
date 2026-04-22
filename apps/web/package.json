@@ -6,7 +6,7 @@
   "scripts": {
     "predev": "kill-port 5573",
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "vite build",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "preview": "vite preview",

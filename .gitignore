@@ -33,3 +33,5 @@ dist-ssr
 apps/web/test-results
 apps/web/playwright-report
 apps/web/blob-report
+
+.env

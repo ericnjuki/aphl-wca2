@@ -1,0 +1,39 @@
+**/node_modules
+**/dist
+**/build
+**/.turbo
+**/.pnpm-store
+**/coverage
+**/test-results
+**/playwright-report
+**/blob-report
+**/playwright/.cache
+
+# Git & editors
+.git
+.gitignore
+.vscode
+.idea
+.claude
+
+# Local env files — never bake secrets into images.
+**/.env
+**/.env.local
+**/.env.*.local
+
+# Runtime data — production uses a volume instead.
+apps/api/data
+
+# Docs, CI, misc
+README.md
+LICENSE
+**/*.md
+!apps/web/src/**/*.md
+
+# OS junk
+.DS_Store
+Thumbs.db
+
+# Dockerfiles themselves don't need to be in build contexts.
+**/Dockerfile
+docker-compose*.yml

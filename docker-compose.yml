@@ -1,0 +1,57 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    image: workforce-competency-api:latest
+    container_name: wca-api
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DB_PATH: /app/apps/api/data/workforce.db
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost}
+      SESSION_SECRET: ${SESSION_SECRET:?SESSION_SECRET is required}
+      SESSION_MAX_AGE_MS: ${SESSION_MAX_AGE_MS:-28800000}
+      # Set to "true" only once HTTPS is terminating at nginx. While running
+      # over plain HTTP, keep this "false" so the session cookie is actually
+      # accepted by browsers.
+      SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-false}
+      RATE_LIMIT_WINDOW_MS: ${RATE_LIMIT_WINDOW_MS:-60000}
+      RATE_LIMIT_MAX: ${RATE_LIMIT_MAX:-100}
+      # Trust the first proxy hop (nginx) so X-Forwarded-* headers are honoured.
+      TRUST_PROXY: "1"
+    volumes:
+      - api_data:/app/apps/api/data
+    networks:
+      - wca
+    expose:
+      - "3000"
+
+  nginx:
+    build:
+      context: .
+      dockerfile: nginx/Dockerfile
+      args:
+        VITE_API_URL: /api/v1
+    image: workforce-competency-nginx:latest
+    container_name: wca-nginx
+    restart: unless-stopped
+    depends_on:
+      - api
+    ports:
+      - "8066:80"
+      - "6443:443"
+    volumes:
+      # Mount these once you're ready for HTTPS — certbot writes certs here.
+      - ./nginx/letsencrypt:/etc/letsencrypt
+      - ./nginx/certbot-www:/var/www/certbot
+    networks:
+      - wca
+
+networks:
+  wca:
+    driver: bridge
+
+volumes:
+  api_data:

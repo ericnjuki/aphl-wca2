@@ -11,7 +11,7 @@ const sessionMiddleware = expressSession({
   saveUninitialized: false,
   cookie: {
     httpOnly: true,
-    secure: !env.isDev,       // HTTPS only in production
+    secure: env.session.cookieSecure,
     sameSite: 'lax',
     maxAge: env.session.maxAgeMs,
   },
