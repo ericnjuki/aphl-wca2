@@ -12,6 +12,8 @@ export interface AuthUser {
   is_enabled: boolean;
   national_id: string;
   id_type: string;
+  facility_id: number | null;
+  department_id: number | null;
   created_at: string;
   updated_at: string;
 }

@@ -1,6 +1,7 @@
-import { useParams } from 'react-router-dom';
+import { Navigate, useParams } from 'react-router-dom';
 
 import { ContentLayout } from '@/components/admin-panel/content-layout';
+import { useAuthStore } from '@/store/auth';
 import { ReportFilterBar } from '@/components/reports/ReportFilterBar';
 import { NationalReport } from '@/components/reports/levels/NationalReport';
 import { RegionReport } from '@/components/reports/levels/RegionReport';
@@ -34,12 +35,25 @@ function ReportsPage() {
     : regionId != null     ? 'region'
     : 'national';
 
+  // Staff cannot view the national report (denied by report-scope on the API).
+  // When they land on /reports, send them to their facility — or, if they
+  // have no facility, to their own individual report which is always allowed.
+  const user = useAuthStore((s) => s.user);
+  const redirectTarget =
+    level === 'national' && user && user.role !== 'admin'
+      ? (user.facility_id != null
+          ? `${baseUrl}reports/facilities/${user.facility_id}`
+          : `${baseUrl}reports/users/${user.id}`)
+      : null;
+
   // Fetch only the active level's data — other hooks stay disabled via null ids.
-  const national   = useNationalReport();
+  const national   = useNationalReport(redirectTarget == null);
   const region     = useRegionReport(regionId);
   const facility   = useFacilityReport(facilityId);
   const department = useDepartmentReport(departmentId);
   const individual = useIndividualReport(userId);
+
+  if (redirectTarget) return <Navigate to={redirectTarget} replace />;
 
   // Breadcrumb bits derived from the active query.
   const crumbs: { label: string; to?: string }[] = [];

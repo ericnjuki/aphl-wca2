@@ -15,6 +15,7 @@ import {
 import { DomainSelect } from '@/components/filters/DomainSelect';
 import { CompetencySelect } from '@/components/filters/CompetencySelect';
 import { useReportsFiltersStore } from '@/store/reports-filters';
+import { useAuthStore } from '@/store/auth';
 import type { ReportLevel } from '@/types/reports';
 
 const ENV = import.meta.env;
@@ -32,6 +33,7 @@ export function ReportFilterBar({ level, crumbs = [], rightSlot }: Props) {
   const { domainCode, competencyValue, approvedOnly, setDomain, setCompetency, setApprovedOnly, reset } =
     useReportsFiltersStore();
   const navigate = useNavigate();
+  const isAdmin = useAuthStore((s) => s.user?.role === 'admin');
   // Suppress unused-var warning for useMatches import (kept for future breadcrumb auto-build)
   useMatches;
 
@@ -80,7 +82,7 @@ export function ReportFilterBar({ level, crumbs = [], rightSlot }: Props) {
 
         <div className="flex-1" />
 
-        {level !== 'national' && (
+        {level !== 'national' && isAdmin && (
           <Button
             variant="ghost"
             size="sm"

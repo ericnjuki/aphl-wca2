@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom';
 import { AlertTriangle } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
+import { useAuthStore } from '@/store/auth';
 import type { ReportLevel } from '@/types/reports';
 
 const ENV = import.meta.env;
@@ -36,6 +37,8 @@ const MESSAGES: Record<ReportLevel, { title: string; body: string; cta: string; 
 };
 
 export function UnassignedBanner({ level, count }: Props) {
+  const isAdmin = useAuthStore((s) => s.user?.role === 'admin');
+  if (!isAdmin) return null;
   if (count <= 0) return null;
   const spec = MESSAGES[level];
   if (!spec) return null;

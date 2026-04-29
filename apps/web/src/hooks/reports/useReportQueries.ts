@@ -35,10 +35,11 @@ function useFilters() {
 
 const FIVE_MINUTES = 5 * 60 * 1000;
 
-export function useNationalReport() {
+export function useNationalReport(enabled: boolean = true) {
   const filters = useFilters();
   return useQuery({
     queryKey: ['reports', 'national', filters],
+    enabled,
     queryFn: async () => {
       const res = await api.get<NationalReportResponse>(`/reports/national${qs(filters)}`);
       if (res.error !== null) throw new Error(res.error);
