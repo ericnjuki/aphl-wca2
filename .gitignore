@@ -25,6 +25,9 @@ dist-ssr
 
 .claude
 
+# Brainstorming visual-companion artefacts
+.superpowers/
+
 # Turbo + pnpm
 .turbo
 .pnpm-store
