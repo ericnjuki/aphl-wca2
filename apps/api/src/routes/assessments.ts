@@ -433,6 +433,59 @@ router.post('/domains/:id/footnotes/import', requireAdmin, (req: Request, res: R
   } catch (err) { next(err); }
 });
 
+// Batch footnote import across domains, keyed by `domain_code`. For each domain
+// code present in the CSV, replaces that domain's footnotes with the file's rows
+// for that code. Unknown codes are reported, not fatal. CSV columns:
+// domain_code, symbol, definition, sort_order.
+router.post('/footnotes/import', requireAdmin, (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { csv } = req.body as { csv?: string };
+    if (!csv) return next(createError('csv is required', 400));
+    const { headers, rows } = parseCsv(csv);
+    const codeIdx = headers.indexOf('domain_code');
+    const symIdx = headers.indexOf('symbol');
+    const defIdx = headers.indexOf('definition');
+    const sortIdx = headers.indexOf('sort_order');
+    if (codeIdx === -1 || symIdx === -1 || defIdx === -1)
+      return next(createError('CSV must have columns: domain_code, symbol, definition', 400));
+
+    // Group rows by domain code so each domain is replaced as a unit.
+    const byCode = new Map<string, { symbol: string; definition: string; sort: number }[]>();
+    for (let i = 0; i < rows.length; i++) {
+      const code = rows[i][codeIdx]?.toUpperCase();
+      const symbol = rows[i][symIdx];
+      const definition = rows[i][defIdx];
+      if (!code || !symbol || !definition) continue;
+      const rawSort = sortIdx === -1 ? '' : rows[i][sortIdx];
+      const parsedSort = rawSort === '' || rawSort === undefined ? i : Number(rawSort);
+      const sort = Number.isNaN(parsedSort) ? i : parsedSort;
+      const list = byCode.get(code) ?? [];
+      list.push({ symbol, definition, sort });
+      byCode.set(code, list);
+    }
+
+    let imported = 0, domainsUpdated = 0;
+    const unknownCodes: string[] = [];
+    for (const [code, fns] of byCode) {
+      const [domain] = query<DomainRow>(
+        'SELECT id FROM assessment_domains WHERE code = ? COLLATE NOCASE',
+        [code],
+      );
+      if (!domain) { unknownCodes.push(code); continue; }
+      execute('DELETE FROM assessment_footnotes WHERE domain_id = ?', [domain.id]);
+      for (const f of fns) {
+        execute(
+          'INSERT INTO assessment_footnotes (domain_id, symbol, definition, sort_order) VALUES (?, ?, ?, ?)',
+          [domain.id, f.symbol, f.definition, f.sort],
+        );
+        imported++;
+      }
+      domainsUpdated++;
+    }
+    res.json({ imported, domainsUpdated, unknownCodes });
+  } catch (err) { next(err); }
+});
+
 router.put('/footnotes/:id', requireAdmin, (req: Request, res: Response, next: NextFunction) => {
   try {
     const id = Number(req.params.id);
