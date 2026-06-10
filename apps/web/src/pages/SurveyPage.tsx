@@ -37,7 +37,7 @@ import { useMultiNamespaceTranslation } from "@/i18n/hooks";
 import { useSurveySession } from "@/hooks/misc/useSurveySession";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
-import { buildSurveyJson, boldMarkdown } from "@/lib/survey/build";
+import { buildSurveyJson, boldMarkdown, type Footnote } from "@/lib/survey/build";
 
 interface AssessmentDomain {
   id: number;
@@ -165,15 +165,17 @@ function SurveyPage() {
       const domain = domains.find((d) => d.code === domainCode);
       if (!domain) return null;
 
-      const itemsRes = await api.get<{ items: AssessmentItem[] }>(
-        `/assessments/domains/${domain.id}/items`,
-      );
+      // Items and footnotes only depend on domain.id — fetch them together.
+      const [itemsRes, fnRes] = await Promise.all([
+        api.get<{ items: AssessmentItem[] }>(`/assessments/domains/${domain.id}/items`),
+        api.get<{ footnotes: Footnote[] }>(`/assessments/domains/${domain.id}/footnotes`),
+      ]);
       if (itemsRes.error !== null) throw new Error(itemsRes.error);
 
-      // Footnotes are optional: a failure here must not block the survey.
-      const fnRes = await api.get<{ footnotes: { symbol: string; definition: string; sort_order: number }[] }>(
-        `/assessments/domains/${domain.id}/footnotes`,
-      );
+      // Footnotes are optional: a failure must not block the survey, but log it.
+      if (fnRes.error !== null) {
+        console.warn(`[SurveyPage] footnotes fetch failed for domain ${domain.id}:`, fnRes.error);
+      }
       const footnotes = fnRes.error === null ? fnRes.data.footnotes : [];
 
       return buildSurveyJson(
