@@ -28,6 +28,9 @@ import {
   DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
@@ -532,8 +535,8 @@ function ImportItemsDialog({
 // ── Import footnotes CSV dialog ───────────────────────────────────────────────
 
 function ImportFootnotesDialog({
-  open, onClose, domainId, onImported,
-}: { open: boolean; onClose: () => void; domainId: number; onImported: () => void }) {
+  open, onClose, onImported,
+}: { open: boolean; onClose: () => void; onImported: () => void }) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [loading, setLoading] = useState(false);
 
@@ -543,12 +546,17 @@ function ImportFootnotesDialog({
     if (!file) { toast.error("Select a CSV file first."); return; }
     setLoading(true);
     const csv = await readFileAsText(file);
-    const res = await api.post<{ imported: number; skipped: number }>(
-      `/assessments/domains/${domainId}/footnotes/import`, { csv },
+    const res = await api.post<{ imported: number; domainsUpdated: number; unknownCodes: string[] }>(
+      `/assessments/footnotes/import`, { csv },
     );
     setLoading(false);
     if (res.error !== null) { toast.error(res.error); return; }
-    toast.success(`Imported ${res.data.imported} footnote(s), skipped ${res.data.skipped}.`);
+    const unknown = res.data.unknownCodes.length
+      ? ` ${res.data.unknownCodes.length} unknown domain code(s) skipped.`
+      : "";
+    toast.success(
+      `Imported ${res.data.imported} footnote(s) across ${res.data.domainsUpdated} domain(s).${unknown}`,
+    );
     onImported();
     onClose();
   }
@@ -559,7 +567,7 @@ function ImportFootnotesDialog({
         <DialogHeader><DialogTitle>Import footnotes</DialogTitle></DialogHeader>
         <form onSubmit={handleSubmit} className="flex flex-col gap-4 py-2">
           <p className="text-sm text-muted-foreground">
-            Replaces this domain's footnotes. Columns: symbol, definition. Optional: sort_order.
+            Columns: <code>domain_code</code>, <code>symbol</code>, <code>definition</code>. Optional: <code>sort_order</code>. Footnotes are replaced for each domain present in the file.
           </p>
           <Input ref={fileRef} type="file" accept=".csv" required />
           <DialogFooter>
@@ -715,7 +723,7 @@ function AssessmentsPage() {
                     <MoreHorizontalIcon />
                   </Button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-48">
+                <DropdownMenuContent align="end" className="w-44">
                   <DropdownMenuGroup>
                     <DropdownMenuItem
                       onClick={() => {
@@ -723,7 +731,7 @@ function AssessmentsPage() {
                         setDomainFormOpen(true);
                       }}
                     >
-                      <Plus className="h-4 w-4" /> New Domain
+                      <Plus className="h-4 w-4" /> New
                     </DropdownMenuItem>
                     <DropdownMenuItem
                       disabled={!selectedDomain}
@@ -732,13 +740,25 @@ function AssessmentsPage() {
                         setDomainFormOpen(true);
                       }}
                     >
-                      <Pencil className="h-4 w-4" /> Edit Domain
+                      <Pencil className="h-4 w-4" /> Edit
                     </DropdownMenuItem>
-                    <DropdownMenuItem
-                      onClick={() => setImportDomainsOpen(true)}
-                    >
-                      <Upload className="h-4 w-4" /> Import Domains CSV
-                    </DropdownMenuItem>
+                    <DropdownMenuSub>
+                      <DropdownMenuSubTrigger>
+                        <Upload className="h-4 w-4" /> Import
+                      </DropdownMenuSubTrigger>
+                      <DropdownMenuSubContent>
+                        <DropdownMenuItem
+                          onClick={() => setImportDomainsOpen(true)}
+                        >
+                          Domains
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={() => setImportFootnotesOpen(true)}
+                        >
+                          Footnotes
+                        </DropdownMenuItem>
+                      </DropdownMenuSubContent>
+                    </DropdownMenuSub>
                   </DropdownMenuGroup>
                   <DropdownMenuSeparator />
                   <DropdownMenuGroup>
@@ -747,7 +767,7 @@ function AssessmentsPage() {
                       disabled={!selectedDomain}
                       onClick={() => setDeleteDomainOpen(true)}
                     >
-                      <Trash2 className="h-4 w-4" /> Delete Domain
+                      <Trash2 className="h-4 w-4" /> Delete
                     </DropdownMenuItem>
                   </DropdownMenuGroup>
                 </DropdownMenuContent>
@@ -772,30 +792,31 @@ function AssessmentsPage() {
       <div className="flex flex-1" />
 
       {isAdmin && selectedDomain && (
-        <div className="flex items-center gap-2">
-          <Button
-            size="sm"
-            variant="outline"
-            className="h-8 gap-1.5 text-xs"
-            onClick={() => setImportItemsOpen(true)}
-          >
-            <FileUp className="h-3.5 w-3.5" /> Import CSV
-          </Button>
-          <Button size="sm" variant="outline" className="h-8 gap-1.5 text-xs"
-            onClick={() => setImportFootnotesOpen(true)}>
-            <FileUp className="h-3.5 w-3.5" /> Import Footnotes
-          </Button>
-          <Button
-            size="sm"
-            className="h-8 gap-1.5 text-xs"
-            onClick={() => {
-              setEditingItem(null);
-              setItemFormOpen(true);
-            }}
-          >
-            <Plus className="h-3.5 w-3.5" /> Add Item
-          </Button>
-        </div>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              size="icon"
+              variant="outline"
+              className="h-8 w-8 rounded-sm"
+              aria-label="Item options"
+            >
+              <MoreHorizontalIcon />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-40">
+            <DropdownMenuItem
+              onClick={() => {
+                setEditingItem(null);
+                setItemFormOpen(true);
+              }}
+            >
+              <Plus className="h-4 w-4" /> Add Item
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => setImportItemsOpen(true)}>
+              <FileUp className="h-4 w-4" /> Import Items
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       )}
     </div>
   );
@@ -835,7 +856,7 @@ function AssessmentsPage() {
                     <TableRow>
                       <TableCell colSpan={isAdmin ? 5 : 4} className="py-8 text-center text-muted-foreground">
                         {items.length === 0
-                          ? `No items yet.${isAdmin ? ' Use "Add Item" or "Import CSV" to add competencies.' : ''}`
+                          ? `No items yet.${isAdmin ? ' Use "Add Item" or "Import Items" to add competencies.' : ''}`
                           : "No items match your search."}
                       </TableCell>
                     </TableRow>
@@ -920,6 +941,15 @@ function AssessmentsPage() {
           qc.invalidateQueries({ queryKey: ["assessments", "domains"] })
         }
       />
+      <ImportFootnotesDialog
+        open={importFootnotesOpen}
+        onClose={() => setImportFootnotesOpen(false)}
+        onImported={() =>
+          // A batch import can touch many domains' footnotes; bust all survey
+          // model queries so re-opened surveys pick up the new footnotes.
+          qc.invalidateQueries({ queryKey: ["assessments"] })
+        }
+      />
       <AlertDialog open={deleteDomainOpen} onOpenChange={setDeleteDomainOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -965,16 +995,6 @@ function AssessmentsPage() {
               qc.invalidateQueries({
                 queryKey: ["assessments", selectedId, "items"],
               })
-            }
-          />
-          <ImportFootnotesDialog
-            open={importFootnotesOpen}
-            onClose={() => setImportFootnotesOpen(false)}
-            domainId={selectedDomain.id}
-            onImported={() =>
-              // Footnotes are fetched as part of the survey model query, keyed by
-              // domain code — bust that so a re-opened survey shows new footnotes.
-              qc.invalidateQueries({ queryKey: ["assessments", selectedDomain.code, "assessment"] })
             }
           />
         </>
