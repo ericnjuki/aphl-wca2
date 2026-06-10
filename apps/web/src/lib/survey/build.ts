@@ -52,6 +52,10 @@ export function matchFootnotes(pageText: string, footnotes: Footnote[]): Footnot
     .sort((a, b) => a.sort_order - b.sort_order);
 }
 
+// NOTE: purpose/introduction/symbol/definition are admin-authored, trusted
+// content interpolated directly into HTML (no escaping), consistent with the
+// team's accepted trusted-content model for SurveyJS html questions.
+
 /** HTML for the per-page footnote block, or "" when there are no footnotes. */
 export function footnoteHtml(footnotes: Footnote[]): string {
   if (footnotes.length === 0) return "";

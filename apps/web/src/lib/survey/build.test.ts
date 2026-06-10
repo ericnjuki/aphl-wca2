@@ -109,4 +109,27 @@ describe("buildSurveyJson", () => {
     expect(types(withMark.pages[1])).toContain("html");
     expect(types(withoutMark.pages[1])).not.toContain("html");
   });
+
+  it("groups items by competency_text onto separate pages", () => {
+    const a = item({ competency_text: "Comp A", competency_value: "1", subcompetency_value: "1.01" });
+    const b = item({ competency_text: "Comp B", competency_value: "2", subcompetency_value: "2.01" });
+    const json = buildSurveyJson(domain, [a, b], []);
+    expect(json.pages).toHaveLength(3); // start page + 2 competency pages
+    expect(json.pages[1].title).toBe("Comp A");
+    expect(json.pages[2].title).toBe("Comp B");
+  });
+
+  it("produces unique question names across all competency pages", () => {
+    const a = item({ competency_text: "Comp A", competency_value: "1", subcompetency_value: "1.01" });
+    const b = item({ competency_text: "Comp A", competency_value: "1", subcompetency_value: "1.02" });
+    const c = item({ competency_text: "Comp B", competency_value: "2", subcompetency_value: "2.01" });
+    const json = buildSurveyJson(domain, [a, b, c], []);
+    const names = json.pages
+      .slice(1)
+      .flatMap((p) => p.elements.map((e) => (e as { name?: string }).name))
+      .filter((n): n is string => typeof n === "string" && !n.includes("-fn-"));
+    expect(new Set(names).size).toBe(names.length);
+    // Comp A page holds both subcompetencies.
+    expect(json.pages[1].elements.filter((e) => (e as { type: string }).type === "radiogroup")).toHaveLength(2);
+  });
 });
