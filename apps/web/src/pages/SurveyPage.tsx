@@ -37,12 +37,15 @@ import { useMultiNamespaceTranslation } from "@/i18n/hooks";
 import { useSurveySession } from "@/hooks/misc/useSurveySession";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
+import { buildSurveyJson, boldMarkdown } from "@/lib/survey/build";
 
 interface AssessmentDomain {
   id: number;
   code: string;
   name: string;
   version: number;
+  purpose?: string | null;
+  introduction?: string | null;
 }
 
 interface AssessmentItem {
@@ -162,70 +165,22 @@ function SurveyPage() {
       const domain = domains.find((d) => d.code === domainCode);
       if (!domain) return null;
 
-      const res = await api.get<{ items: AssessmentItem[] }>(
+      const itemsRes = await api.get<{ items: AssessmentItem[] }>(
         `/assessments/domains/${domain.id}/items`,
       );
-      if (res.error !== null) throw new Error(res.error);
-      const items = res.data.items;
+      if (itemsRes.error !== null) throw new Error(itemsRes.error);
 
-      const groupedList = Object.entries(
-        items.reduce<Record<string, AssessmentItem[]>>((acc, item) => {
-          const key = item.competency_text;
-          if (!acc[key]) acc[key] = [];
-          acc[key].push(item);
-          return acc;
-        }, {}),
-      ).map(([competency_text, groupItems]) => ({
-        competency_text,
-        competency_value: groupItems[0]?.competency_value,
-        items: groupItems,
-      }));
+      // Footnotes are optional: a failure here must not block the survey.
+      const fnRes = await api.get<{ footnotes: { symbol: string; definition: string; sort_order: number }[] }>(
+        `/assessments/domains/${domain.id}/footnotes`,
+      );
+      const footnotes = fnRes.error === null ? fnRes.data.footnotes : [];
 
-      return {
-        pages: [
-          {
-            elements: [
-              {
-                type: "html",
-                html: `
-                <div class="w-full flex flex-col items-center justify-center mt-4">
-                  <div class="flex text-lg font-bold uppercase">${domain.name.toUpperCase()}</div>
-                  <div class="flex text-xs text-muted-foreground">${domain.code}</div>
-                </div>
-                `,
-              },
-            ],
-          },
-          ...groupedList.map((g) => ({
-            name: `${domain.code}-${g.competency_value}`,
-            title: g.competency_text,
-            elements: g.items.map((item) => ({
-              type: "radiogroup",
-              name: `${domain.code}-${domain.version}-${item.competency_value}-${item.subcompetency_value}`,
-              title: `${item.subcompetency_value} - ${item.subcompetency_text}`,
-              isRequired: true,
-              choices: [
-                { value: "beginner", text: item.beginner },
-                { value: "competent", text: item.competent },
-                { value: "proficient", text: item.proficient },
-                { value: "expert", text: item.expert },
-                { value: "na", text: item.na },
-              ],
-            })),
-          })),
-        ],
-        pageNextText: "Next",
-        completeText: "Submit",
-        showPrevButton: false,
-        firstPageIsStartPage: true,
-        startSurveyText: "Start",
-        completedHtml: `Thank you for completing the assessment!
-          <div class="w-full flex items-center justify-center mt-4">
-            <button id="startAgain" class="flex">New assessment</button>
-          </div>`,
-        showQuestionNumbers: true,
-        requiredMark: "(*)",
-      };
+      return buildSurveyJson(
+        { code: domain.code, name: domain.name, version: domain.version, purpose: domain.purpose, introduction: domain.introduction },
+        itemsRes.data.items,
+        footnotes,
+      );
     },
     refetchInterval: false,
     refetchOnMount: false,
@@ -236,6 +191,13 @@ function SurveyPage() {
 
   const survey = React.useMemo(() => {
     const _survey = new Model(data ?? undefined);
+
+    // Render the "**Level —**" prefix (and any other ** **) as bold. Only
+    // touch strings that actually contain markers so plain titles/answers
+    // pass through unchanged.
+    _survey.onTextMarkdown.add((_sender: Model, options: { text: string; html: string }) => {
+      if (options.text.includes("**")) options.html = boldMarkdown(options.text);
+    });
 
     _survey.onStarted.add(async (_sender: Model) => {
       // Resume path: session already exists, skip creation.
