@@ -825,7 +825,7 @@ function AssessmentsPage() {
 
   return (
     <ContentLayout nav={navComponents()}>
-      <div className="flex flex-col min-h-[calc(100vh-26px-56px)] max-h-[calc(100vh-26px-56px)] w-full h-full">
+      <div className="flex flex-col min-h-[calc(100vh-26px-56px)] max-h-[calc(100vh-26px-56px)] w-full h-full border-t">
         {!selectedDomain ? (
           <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
             Select a domain to view its competency items.
