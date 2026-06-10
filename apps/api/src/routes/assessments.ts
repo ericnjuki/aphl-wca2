@@ -31,6 +31,15 @@ interface ItemRow extends Record<string, unknown> {
   updated_at: string;
 }
 
+interface FootnoteRow extends Record<string, unknown> {
+  id: number;
+  domain_id: number;
+  symbol: string;
+  definition: string;
+  sort_order: number;
+  created_at: string;
+}
+
 const router = Router();
 
 router.use(requireAuth, requirePasswordChanged);
@@ -353,6 +362,101 @@ router.delete('/items/:id', requireAdmin, (req: Request, res: Response, next: Ne
     if (!existing) return next(createError('Item not found', 404));
     execute('DELETE FROM assessment_items WHERE id = ?', [id]);
     res.json({ message: 'Item deleted' });
+  } catch (err) { next(err); }
+});
+
+// ── Footnotes ───────────────────────────────────────────────────────────────
+
+router.get('/domains/:id/footnotes', (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const domainId = Number(req.params.id);
+    const [domain] = query<DomainRow>('SELECT id FROM assessment_domains WHERE id = ?', [domainId]);
+    if (!domain) return next(createError('Domain not found', 404));
+    const footnotes = query<FootnoteRow>(
+      'SELECT * FROM assessment_footnotes WHERE domain_id = ? ORDER BY sort_order ASC, id ASC',
+      [domainId],
+    );
+    res.json({ footnotes });
+  } catch (err) { next(err); }
+});
+
+router.post('/domains/:id/footnotes', requireAdmin, (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const domainId = Number(req.params.id);
+    const [domain] = query<DomainRow>('SELECT id FROM assessment_domains WHERE id = ?', [domainId]);
+    if (!domain) return next(createError('Domain not found', 404));
+    const { symbol, definition, sort_order = 0 } = req.body as Partial<FootnoteRow>;
+    if (!symbol || !definition) return next(createError('symbol and definition are required', 400));
+    execute(
+      'INSERT INTO assessment_footnotes (domain_id, symbol, definition, sort_order) VALUES (?, ?, ?, ?)',
+      [domainId, symbol, definition, sort_order],
+    );
+    const [footnote] = query<FootnoteRow>(
+      'SELECT * FROM assessment_footnotes WHERE domain_id = ? ORDER BY id DESC LIMIT 1',
+      [domainId],
+    );
+    res.status(201).json({ footnote });
+  } catch (err) { next(err); }
+});
+
+// Replace-all import: clears the domain's footnotes, then inserts the CSV rows.
+// Makes re-importing idempotent. CSV columns: symbol, definition, sort_order.
+router.post('/domains/:id/footnotes/import', requireAdmin, (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const domainId = Number(req.params.id);
+    const [domain] = query<DomainRow>('SELECT id FROM assessment_domains WHERE id = ?', [domainId]);
+    if (!domain) return next(createError('Domain not found', 404));
+    const { csv } = req.body as { csv?: string };
+    if (!csv) return next(createError('csv is required', 400));
+    const { headers, rows } = parseCsv(csv);
+    const symIdx = headers.indexOf('symbol');
+    const defIdx = headers.indexOf('definition');
+    const sortIdx = headers.indexOf('sort_order');
+    if (symIdx === -1 || defIdx === -1)
+      return next(createError('CSV must have columns: symbol, definition', 400));
+    execute('DELETE FROM assessment_footnotes WHERE domain_id = ?', [domainId]);
+    let imported = 0, skipped = 0;
+    for (let i = 0; i < rows.length; i++) {
+      const symbol = rows[i][symIdx];
+      const definition = rows[i][defIdx];
+      if (!symbol || !definition) { skipped++; continue; }
+      const parsedSort = sortIdx === -1 ? i : Number(rows[i][sortIdx] || i);
+      execute(
+        'INSERT INTO assessment_footnotes (domain_id, symbol, definition, sort_order) VALUES (?, ?, ?, ?)',
+        [domainId, symbol, definition, Number.isNaN(parsedSort) ? i : parsedSort],
+      );
+      imported++;
+    }
+    res.json({ imported, skipped });
+  } catch (err) { next(err); }
+});
+
+router.put('/footnotes/:id', requireAdmin, (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const id = Number(req.params.id);
+    const [existing] = query<FootnoteRow>('SELECT * FROM assessment_footnotes WHERE id = ?', [id]);
+    if (!existing) return next(createError('Footnote not found', 404));
+    const {
+      symbol = existing.symbol,
+      definition = existing.definition,
+      sort_order = existing.sort_order,
+    } = req.body as Partial<FootnoteRow>;
+    execute(
+      'UPDATE assessment_footnotes SET symbol = ?, definition = ?, sort_order = ? WHERE id = ?',
+      [symbol, definition, sort_order, id],
+    );
+    const [footnote] = query<FootnoteRow>('SELECT * FROM assessment_footnotes WHERE id = ?', [id]);
+    res.json({ footnote });
+  } catch (err) { next(err); }
+});
+
+router.delete('/footnotes/:id', requireAdmin, (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const id = Number(req.params.id);
+    const [existing] = query<FootnoteRow>('SELECT id FROM assessment_footnotes WHERE id = ?', [id]);
+    if (!existing) return next(createError('Footnote not found', 404));
+    execute('DELETE FROM assessment_footnotes WHERE id = ?', [id]);
+    res.json({ message: 'Footnote deleted' });
   } catch (err) { next(err); }
 });
 
