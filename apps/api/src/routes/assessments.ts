@@ -8,6 +8,8 @@ interface DomainRow extends Record<string, unknown> {
   code: string;
   name: string;
   version: number;
+  purpose: string | null;
+  introduction: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -109,14 +111,14 @@ router.get('/domains/:id', (req: Request, res: Response, next: NextFunction) => 
 
 router.post('/domains', requireAdmin, (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { code, name, version = 1 } = req.body as {
-      code?: string; name?: string; version?: number;
+    const { code, name, version = 1, purpose = null, introduction = null } = req.body as {
+      code?: string; name?: string; version?: number; purpose?: string | null; introduction?: string | null;
     };
     if (!code || !name) return next(createError('code and name are required', 400));
     try {
       execute(
-        'INSERT INTO assessment_domains (code, name, version) VALUES (?, ?, ?)',
-        [code.toUpperCase(), name, version],
+        'INSERT INTO assessment_domains (code, name, version, purpose, introduction) VALUES (?, ?, ?, ?, ?)',
+        [code.toUpperCase(), name, version, purpose, introduction],
       );
     } catch (err: unknown) {
       if (err instanceof Error && err.message.includes('UNIQUE'))
@@ -140,19 +142,34 @@ router.post('/domains/import', requireAdmin, (req: Request, res: Response, next:
     const nameIdx = headers.indexOf('assessment_name');
     if (codeIdx === -1 || nameIdx === -1)
       return next(createError('CSV must have assessment_code and assessment_name columns', 400));
-    let imported = 0, skipped = 0;
+    const purposeIdx = headers.indexOf('purpose');
+    const introIdx = headers.indexOf('introduction');
+    let imported = 0, updated = 0, skipped = 0;
     for (const row of rows) {
       const code = row[codeIdx]?.toUpperCase();
       const name = row[nameIdx];
       if (!code || !name) { skipped++; continue; }
-      try {
-        execute('INSERT INTO assessment_domains (code, name) VALUES (?, ?)', [code, name]);
+      const purpose = purposeIdx === -1 ? null : (row[purposeIdx] ?? null);
+      const introduction = introIdx === -1 ? null : (row[introIdx] ?? null);
+      const [existing] = query<DomainRow>(
+        'SELECT * FROM assessment_domains WHERE code = ? COLLATE NOCASE',
+        [code],
+      );
+      if (existing) {
+        execute(
+          `UPDATE assessment_domains SET name = ?, purpose = ?, introduction = ?, updated_at = datetime('now') WHERE id = ?`,
+          [name, purpose, introduction, existing.id],
+        );
+        updated++;
+      } else {
+        execute(
+          'INSERT INTO assessment_domains (code, name, purpose, introduction) VALUES (?, ?, ?, ?)',
+          [code, name, purpose, introduction],
+        );
         imported++;
-      } catch {
-        skipped++;
       }
     }
-    res.json({ imported, skipped });
+    res.json({ imported, updated, skipped });
   } catch (err) { next(err); }
 });
 
@@ -168,11 +185,13 @@ router.put('/domains/:id', requireAdmin, (req: Request, res: Response, next: Nex
       code = existing.code,
       name = existing.name,
       version = existing.version,
-    } = req.body as { code?: string; name?: string; version?: number };
+      purpose = existing.purpose,
+      introduction = existing.introduction,
+    } = req.body as { code?: string; name?: string; version?: number; purpose?: string | null; introduction?: string | null };
     try {
       execute(
-        `UPDATE assessment_domains SET code = ?, name = ?, version = ?, updated_at = datetime('now') WHERE id = ?`,
-        [code.toUpperCase(), name, version, id],
+        `UPDATE assessment_domains SET code = ?, name = ?, version = ?, purpose = ?, introduction = ?, updated_at = datetime('now') WHERE id = ?`,
+        [code.toUpperCase(), name, version, purpose, introduction, id],
       );
     } catch (err: unknown) {
       if (err instanceof Error && err.message.includes('UNIQUE'))
