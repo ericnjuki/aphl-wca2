@@ -420,10 +420,12 @@ router.post('/domains/:id/footnotes/import', requireAdmin, (req: Request, res: R
       const symbol = rows[i][symIdx];
       const definition = rows[i][defIdx];
       if (!symbol || !definition) { skipped++; continue; }
-      const parsedSort = sortIdx === -1 ? i : Number(rows[i][sortIdx] || i);
+      const rawSort = sortIdx === -1 ? "" : rows[i][sortIdx];
+      const parsedSort = rawSort === "" || rawSort === undefined ? i : Number(rawSort);
+      const finalSort = Number.isNaN(parsedSort) ? i : parsedSort;
       execute(
         'INSERT INTO assessment_footnotes (domain_id, symbol, definition, sort_order) VALUES (?, ?, ?, ?)',
-        [domainId, symbol, definition, Number.isNaN(parsedSort) ? i : parsedSort],
+        [domainId, symbol, definition, finalSort],
       );
       imported++;
     }
