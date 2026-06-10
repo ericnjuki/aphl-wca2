@@ -21,7 +21,7 @@ If the database is brand new, follow these steps in order:
    - Departments (linked to facilities)
    - Org roles and user titles
 2. **Users** — create staff accounts and, **importantly**, assign each user a **Facility** and **Department**. Responses snapshot the user's facility/department at completion time — unassigned users' responses won't roll up into regional reports.
-3. **Assessments** — define at least one assessment domain and import its competency items (CSV).
+3. **Assessments** — define at least one assessment domain and import its competency items (CSV). Optionally give each domain a **Purpose** and **Introduction** (shown on the survey Start page) and import **footnotes** for any marked terms.
 4. **Invite staff** — share their username + temporary password. They'll be prompted to set their own password on first login.
 
 ## Daily use (staff)
