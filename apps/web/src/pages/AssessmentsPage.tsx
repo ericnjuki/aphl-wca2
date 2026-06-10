@@ -211,7 +211,7 @@ function DomainFormDialog({
                 required
               />
 
-              <Label htmlFor="d-purpose" className="text-right text-sm self-start mt-2">
+              <Label htmlFor="d-purpose" className="text-right text-sm pt-2">
                 Purpose
               </Label>
               <Textarea
@@ -222,7 +222,7 @@ function DomainFormDialog({
                 rows={3}
               />
 
-              <Label htmlFor="d-intro" className="text-right text-sm self-start mt-2">
+              <Label htmlFor="d-intro" className="text-right text-sm pt-2">
                 Introduction
               </Label>
               <Textarea
@@ -297,7 +297,7 @@ function ImportDomainsDialog({
         </DialogHeader>
         <form onSubmit={handleSubmit} className="flex flex-col gap-4 py-2">
           <p className="text-sm text-muted-foreground">
-            Required columns: assessment_code, assessment_name. Optional: purpose, introduction. Existing domains are updated.
+            Required columns: <code>assessment_code</code>, <code>assessment_name</code>. Optional: <code>purpose</code>, <code>introduction</code>. Existing domains are updated.
           </p>
           <Input ref={fileRef} type="file" accept=".csv" required />
           <DialogFooter>
@@ -781,12 +781,10 @@ function AssessmentsPage() {
           >
             <FileUp className="h-3.5 w-3.5" /> Import CSV
           </Button>
-          {selectedId !== null && (
-            <Button size="sm" variant="outline" className="h-8 gap-1.5 text-xs"
-              onClick={() => setImportFootnotesOpen(true)}>
-              <FileUp className="h-3.5 w-3.5" /> Import Footnotes
-            </Button>
-          )}
+          <Button size="sm" variant="outline" className="h-8 gap-1.5 text-xs"
+            onClick={() => setImportFootnotesOpen(true)}>
+            <FileUp className="h-3.5 w-3.5" /> Import Footnotes
+          </Button>
           <Button
             size="sm"
             className="h-8 gap-1.5 text-xs"
@@ -969,14 +967,16 @@ function AssessmentsPage() {
               })
             }
           />
-          {selectedId !== null && (
-            <ImportFootnotesDialog
-              open={importFootnotesOpen}
-              onClose={() => setImportFootnotesOpen(false)}
-              domainId={selectedId}
-              onImported={() => qc.invalidateQueries({ queryKey: ["assessments", selectedId, "items"] })}
-            />
-          )}
+          <ImportFootnotesDialog
+            open={importFootnotesOpen}
+            onClose={() => setImportFootnotesOpen(false)}
+            domainId={selectedDomain.id}
+            onImported={() =>
+              // Footnotes are fetched as part of the survey model query, keyed by
+              // domain code — bust that so a re-opened survey shows new footnotes.
+              qc.invalidateQueries({ queryKey: ["assessments", selectedDomain.code, "assessment"] })
+            }
+          />
         </>
       )}
       <AlertDialog
