@@ -8,6 +8,8 @@ interface DomainRow extends Record<string, unknown> {
   code: string;
   name: string;
   version: number;
+  purpose: string | null;
+  introduction: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -29,22 +31,69 @@ interface ItemRow extends Record<string, unknown> {
   updated_at: string;
 }
 
+interface FootnoteRow extends Record<string, unknown> {
+  id: number;
+  domain_id: number;
+  symbol: string;
+  definition: string;
+  sort_order: number;
+  created_at: string;
+}
+
 const router = Router();
 
 router.use(requireAuth, requirePasswordChanged);
 
-// Simple CSV parser — splits on commas, trims whitespace, skips blank lines.
-// Matches the naive format used in the existing competency CSV files.
+// CSV parser supporting RFC-4180 double-quoted fields: quoted fields may
+// contain commas, newlines, and escaped quotes (""). Unquoted fields are
+// trimmed; quoted fields preserve their interior whitespace.
 function parseCsv(text: string): { headers: string[]; rows: string[][] } {
-  const lines = text
-    .trim()
-    .split('\n')
-    .map((l) => l.trim())
-    .filter(Boolean);
-  if (lines.length < 2) return { headers: [], rows: [] };
-  const headers = lines[0].replace(/^\uFEFF/, '').split(',').map((h) => h.trim());
-  const rows = lines.slice(1).map((l) => l.split(',').map((v) => v.trim()));
-  return { headers, rows };
+  const clean = text.replace(/^\uFEFF/, "").replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  const records: string[][] = [];
+  let field = "";
+  let record: string[] = [];
+  let inQuotes = false;
+  let fieldWasQuoted = false;
+
+  const pushField = () => {
+    record.push(fieldWasQuoted ? field : field.trim());
+    field = "";
+    fieldWasQuoted = false;
+  };
+  const pushRecord = () => {
+    pushField();
+    // Skip wholly-empty lines.
+    if (record.length > 1 || record[0] !== "") records.push(record);
+    record = [];
+  };
+
+  for (let i = 0; i < clean.length; i++) {
+    const ch = clean[i];
+    if (inQuotes) {
+      if (ch === '"') {
+        if (clean[i + 1] === '"') { field += '"'; i++; }
+        else inQuotes = false;
+      } else field += ch;
+    } else if (ch === '"' && field === "") {
+      inQuotes = true;
+      fieldWasQuoted = true;
+    } else if (ch === '"') {
+      // Stray quote mid-unquoted-field: treat as a literal char (non-conforming input).
+      field += ch;
+    } else if (ch === ",") {
+      pushField();
+    } else if (ch === "\n") {
+      pushRecord();
+    } else {
+      field += ch;
+    }
+  }
+  // Trailing field/record (no final newline).
+  if (field !== "" || record.length > 0) pushRecord();
+
+  if (records.length < 2) return { headers: [], rows: [] };
+  const headers = records[0].map((h) => h.trim());
+  return { headers, rows: records.slice(1) };
 }
 
 // ── Domains ───────────────────────────────────────────────────────────────────
@@ -71,14 +120,14 @@ router.get('/domains/:id', (req: Request, res: Response, next: NextFunction) => 
 
 router.post('/domains', requireAdmin, (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { code, name, version = 1 } = req.body as {
-      code?: string; name?: string; version?: number;
+    const { code, name, version = 1, purpose = null, introduction = null } = req.body as {
+      code?: string; name?: string; version?: number; purpose?: string | null; introduction?: string | null;
     };
     if (!code || !name) return next(createError('code and name are required', 400));
     try {
       execute(
-        'INSERT INTO assessment_domains (code, name, version) VALUES (?, ?, ?)',
-        [code.toUpperCase(), name, version],
+        'INSERT INTO assessment_domains (code, name, version, purpose, introduction) VALUES (?, ?, ?, ?, ?)',
+        [code.toUpperCase(), name, version, purpose, introduction],
       );
     } catch (err: unknown) {
       if (err instanceof Error && err.message.includes('UNIQUE'))
@@ -102,19 +151,34 @@ router.post('/domains/import', requireAdmin, (req: Request, res: Response, next:
     const nameIdx = headers.indexOf('assessment_name');
     if (codeIdx === -1 || nameIdx === -1)
       return next(createError('CSV must have assessment_code and assessment_name columns', 400));
-    let imported = 0, skipped = 0;
+    const purposeIdx = headers.indexOf('purpose');
+    const introIdx = headers.indexOf('introduction');
+    let imported = 0, updated = 0, skipped = 0;
     for (const row of rows) {
       const code = row[codeIdx]?.toUpperCase();
       const name = row[nameIdx];
       if (!code || !name) { skipped++; continue; }
-      try {
-        execute('INSERT INTO assessment_domains (code, name) VALUES (?, ?)', [code, name]);
+      const purpose = purposeIdx === -1 ? null : (row[purposeIdx] || null);
+      const introduction = introIdx === -1 ? null : (row[introIdx] || null);
+      const [existing] = query<DomainRow>(
+        'SELECT * FROM assessment_domains WHERE code = ? COLLATE NOCASE',
+        [code],
+      );
+      if (existing) {
+        execute(
+          `UPDATE assessment_domains SET name = ?, purpose = ?, introduction = ?, updated_at = datetime('now') WHERE id = ?`,
+          [name, purpose, introduction, existing.id],
+        );
+        updated++;
+      } else {
+        execute(
+          'INSERT INTO assessment_domains (code, name, purpose, introduction) VALUES (?, ?, ?, ?)',
+          [code, name, purpose, introduction],
+        );
         imported++;
-      } catch {
-        skipped++;
       }
     }
-    res.json({ imported, skipped });
+    res.json({ imported, updated, skipped });
   } catch (err) { next(err); }
 });
 
@@ -130,11 +194,13 @@ router.put('/domains/:id', requireAdmin, (req: Request, res: Response, next: Nex
       code = existing.code,
       name = existing.name,
       version = existing.version,
-    } = req.body as { code?: string; name?: string; version?: number };
+      purpose = existing.purpose,
+      introduction = existing.introduction,
+    } = req.body as { code?: string; name?: string; version?: number; purpose?: string | null; introduction?: string | null };
     try {
       execute(
-        `UPDATE assessment_domains SET code = ?, name = ?, version = ?, updated_at = datetime('now') WHERE id = ?`,
-        [code.toUpperCase(), name, version, id],
+        `UPDATE assessment_domains SET code = ?, name = ?, version = ?, purpose = ?, introduction = ?, updated_at = datetime('now') WHERE id = ?`,
+        [code.toUpperCase(), name, version, purpose, introduction, id],
       );
     } catch (err: unknown) {
       if (err instanceof Error && err.message.includes('UNIQUE'))
@@ -296,6 +362,103 @@ router.delete('/items/:id', requireAdmin, (req: Request, res: Response, next: Ne
     if (!existing) return next(createError('Item not found', 404));
     execute('DELETE FROM assessment_items WHERE id = ?', [id]);
     res.json({ message: 'Item deleted' });
+  } catch (err) { next(err); }
+});
+
+// ── Footnotes ───────────────────────────────────────────────────────────────
+
+router.get('/domains/:id/footnotes', (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const domainId = Number(req.params.id);
+    const [domain] = query<DomainRow>('SELECT id FROM assessment_domains WHERE id = ?', [domainId]);
+    if (!domain) return next(createError('Domain not found', 404));
+    const footnotes = query<FootnoteRow>(
+      'SELECT * FROM assessment_footnotes WHERE domain_id = ? ORDER BY sort_order ASC, id ASC',
+      [domainId],
+    );
+    res.json({ footnotes });
+  } catch (err) { next(err); }
+});
+
+router.post('/domains/:id/footnotes', requireAdmin, (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const domainId = Number(req.params.id);
+    const [domain] = query<DomainRow>('SELECT id FROM assessment_domains WHERE id = ?', [domainId]);
+    if (!domain) return next(createError('Domain not found', 404));
+    const { symbol, definition, sort_order = 0 } = req.body as Partial<FootnoteRow>;
+    if (!symbol || !definition) return next(createError('symbol and definition are required', 400));
+    execute(
+      'INSERT INTO assessment_footnotes (domain_id, symbol, definition, sort_order) VALUES (?, ?, ?, ?)',
+      [domainId, symbol, definition, sort_order],
+    );
+    const [footnote] = query<FootnoteRow>(
+      'SELECT * FROM assessment_footnotes WHERE domain_id = ? ORDER BY id DESC LIMIT 1',
+      [domainId],
+    );
+    res.status(201).json({ footnote });
+  } catch (err) { next(err); }
+});
+
+// Replace-all import: clears the domain's footnotes, then inserts the CSV rows.
+// Makes re-importing idempotent. CSV columns: symbol, definition, sort_order.
+router.post('/domains/:id/footnotes/import', requireAdmin, (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const domainId = Number(req.params.id);
+    const [domain] = query<DomainRow>('SELECT id FROM assessment_domains WHERE id = ?', [domainId]);
+    if (!domain) return next(createError('Domain not found', 404));
+    const { csv } = req.body as { csv?: string };
+    if (!csv) return next(createError('csv is required', 400));
+    const { headers, rows } = parseCsv(csv);
+    const symIdx = headers.indexOf('symbol');
+    const defIdx = headers.indexOf('definition');
+    const sortIdx = headers.indexOf('sort_order');
+    if (symIdx === -1 || defIdx === -1)
+      return next(createError('CSV must have columns: symbol, definition', 400));
+    execute('DELETE FROM assessment_footnotes WHERE domain_id = ?', [domainId]);
+    let imported = 0, skipped = 0;
+    for (let i = 0; i < rows.length; i++) {
+      const symbol = rows[i][symIdx];
+      const definition = rows[i][defIdx];
+      if (!symbol || !definition) { skipped++; continue; }
+      const rawSort = sortIdx === -1 ? "" : rows[i][sortIdx];
+      const parsedSort = rawSort === "" || rawSort === undefined ? i : Number(rawSort);
+      const finalSort = Number.isNaN(parsedSort) ? i : parsedSort;
+      execute(
+        'INSERT INTO assessment_footnotes (domain_id, symbol, definition, sort_order) VALUES (?, ?, ?, ?)',
+        [domainId, symbol, definition, finalSort],
+      );
+      imported++;
+    }
+    res.json({ imported, skipped });
+  } catch (err) { next(err); }
+});
+
+router.put('/footnotes/:id', requireAdmin, (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const id = Number(req.params.id);
+    const [existing] = query<FootnoteRow>('SELECT * FROM assessment_footnotes WHERE id = ?', [id]);
+    if (!existing) return next(createError('Footnote not found', 404));
+    const {
+      symbol = existing.symbol,
+      definition = existing.definition,
+      sort_order = existing.sort_order,
+    } = req.body as Partial<FootnoteRow>;
+    execute(
+      'UPDATE assessment_footnotes SET symbol = ?, definition = ?, sort_order = ? WHERE id = ?',
+      [symbol, definition, sort_order, id],
+    );
+    const [footnote] = query<FootnoteRow>('SELECT * FROM assessment_footnotes WHERE id = ?', [id]);
+    res.json({ footnote });
+  } catch (err) { next(err); }
+});
+
+router.delete('/footnotes/:id', requireAdmin, (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const id = Number(req.params.id);
+    const [existing] = query<FootnoteRow>('SELECT id FROM assessment_footnotes WHERE id = ?', [id]);
+    if (!existing) return next(createError('Footnote not found', 404));
+    execute('DELETE FROM assessment_footnotes WHERE id = ?', [id]);
+    res.json({ message: 'Footnote deleted' });
   } catch (err) { next(err); }
 });
 

@@ -231,6 +231,28 @@ const migrations: { id: number; sql: string }[] = [
       ALTER TABLE user_assessments ADD COLUMN review_notes  TEXT;
     `,
   },
+  {
+    id: 8,
+    sql: `
+      -- Per-domain intro content shown on the survey Start page.
+      ALTER TABLE assessment_domains ADD COLUMN purpose      TEXT;
+      ALTER TABLE assessment_domains ADD COLUMN introduction TEXT;
+
+      -- Authored footnote symbol → definition pairs, shown on a survey page
+      -- when the symbol appears in that page's text.
+      CREATE TABLE IF NOT EXISTS assessment_footnotes (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        domain_id   INTEGER NOT NULL REFERENCES assessment_domains(id) ON DELETE CASCADE,
+        symbol      TEXT    NOT NULL,
+        definition  TEXT    NOT NULL,
+        sort_order  INTEGER NOT NULL DEFAULT 0,
+        created_at  TEXT    NOT NULL DEFAULT (datetime('now'))
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_footnotes_domain
+        ON assessment_footnotes(domain_id);
+    `,
+  },
 ];
 
 export async function runMigrations(db: Database): Promise<void> {

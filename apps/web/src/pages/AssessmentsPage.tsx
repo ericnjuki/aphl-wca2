@@ -78,6 +78,8 @@ interface AssessmentDomain {
   code: string;
   name: string;
   version: number;
+  purpose?: string | null;
+  introduction?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -126,6 +128,8 @@ function DomainFormDialog({
   const [code, setCode] = useState("");
   const [name, setName] = useState("");
   const [version, setVersion] = useState("1");
+  const [purpose, setPurpose] = useState("");
+  const [introduction, setIntroduction] = useState("");
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -133,6 +137,8 @@ function DomainFormDialog({
       setCode(initial?.code ?? "");
       setName(initial?.name ?? "");
       setVersion(String(initial?.version ?? 1));
+      setPurpose(initial?.purpose ?? "");
+      setIntroduction(initial?.introduction ?? "");
     }
   }, [open, initial]);
 
@@ -143,6 +149,8 @@ function DomainFormDialog({
       code: code.trim().toUpperCase(),
       name: name.trim(),
       version: Number(version),
+      purpose: purpose.trim() || null,
+      introduction: introduction.trim() || null,
     };
     const res = initial
       ? await api.put(`/assessments/domains/${initial.id}`, body)
@@ -202,6 +210,28 @@ function DomainFormDialog({
                 onChange={(e) => setVersion(e.target.value)}
                 required
               />
+
+              <Label htmlFor="d-purpose" className="text-right text-sm pt-2">
+                Purpose
+              </Label>
+              <Textarea
+                id="d-purpose"
+                value={purpose}
+                onChange={(e) => setPurpose(e.target.value)}
+                placeholder="Purpose statement shown on the Start page"
+                rows={3}
+              />
+
+              <Label htmlFor="d-intro" className="text-right text-sm pt-2">
+                Introduction
+              </Label>
+              <Textarea
+                id="d-intro"
+                value={introduction}
+                onChange={(e) => setIntroduction(e.target.value)}
+                placeholder="Longer introduction shown on the Start page"
+                rows={6}
+              />
             </div>
           </div>
           <SheetFooter className="mt-auto px-6 py-4 border-t">
@@ -243,7 +273,7 @@ function ImportDomainsDialog({
     }
     setLoading(true);
     const csv = await readFileAsText(file);
-    const res = await api.post<{ imported: number; skipped: number }>(
+    const res = await api.post<{ imported: number; updated: number; skipped: number }>(
       "/assessments/domains/import",
       { csv },
     );
@@ -253,7 +283,7 @@ function ImportDomainsDialog({
       return;
     }
     toast.success(
-      `Imported ${res.data.imported} domain(s), skipped ${res.data.skipped}.`,
+      `Imported ${res.data.imported}, updated ${res.data.updated}, skipped ${res.data.skipped}.`,
     );
     onImported();
     onClose();
@@ -267,8 +297,7 @@ function ImportDomainsDialog({
         </DialogHeader>
         <form onSubmit={handleSubmit} className="flex flex-col gap-4 py-2">
           <p className="text-sm text-muted-foreground">
-            CSV must have columns: <code>assessment_code</code>,{" "}
-            <code>assessment_name</code>.
+            Required columns: <code>assessment_code</code>, <code>assessment_name</code>. Optional: <code>purpose</code>, <code>introduction</code>. Existing domains are updated.
           </p>
           <Input ref={fileRef} type="file" accept=".csv" required />
           <DialogFooter>
@@ -500,6 +529,49 @@ function ImportItemsDialog({
   );
 }
 
+// ── Import footnotes CSV dialog ───────────────────────────────────────────────
+
+function ImportFootnotesDialog({
+  open, onClose, domainId, onImported,
+}: { open: boolean; onClose: () => void; domainId: number; onImported: () => void }) {
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [loading, setLoading] = useState(false);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    const file = fileRef.current?.files?.[0];
+    if (!file) { toast.error("Select a CSV file first."); return; }
+    setLoading(true);
+    const csv = await readFileAsText(file);
+    const res = await api.post<{ imported: number; skipped: number }>(
+      `/assessments/domains/${domainId}/footnotes/import`, { csv },
+    );
+    setLoading(false);
+    if (res.error !== null) { toast.error(res.error); return; }
+    toast.success(`Imported ${res.data.imported} footnote(s), skipped ${res.data.skipped}.`);
+    onImported();
+    onClose();
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader><DialogTitle>Import footnotes</DialogTitle></DialogHeader>
+        <form onSubmit={handleSubmit} className="flex flex-col gap-4 py-2">
+          <p className="text-sm text-muted-foreground">
+            Replaces this domain's footnotes. Columns: symbol, definition. Optional: sort_order.
+          </p>
+          <Input ref={fileRef} type="file" accept=".csv" required />
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
+            <Button type="submit" disabled={loading}>{loading ? "Importing…" : "Import"}</Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 function AssessmentsPage() {
@@ -520,6 +592,7 @@ function AssessmentsPage() {
   const [itemFormOpen, setItemFormOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<AssessmentItem | null>(null);
   const [importItemsOpen, setImportItemsOpen] = useState(false);
+  const [importFootnotesOpen, setImportFootnotesOpen] = useState(false);
   const [deleteItemId, setDeleteItemId] = useState<number | null>(null);
 
   const [searchInput, setSearchInput] = useState("");
@@ -708,6 +781,10 @@ function AssessmentsPage() {
           >
             <FileUp className="h-3.5 w-3.5" /> Import CSV
           </Button>
+          <Button size="sm" variant="outline" className="h-8 gap-1.5 text-xs"
+            onClick={() => setImportFootnotesOpen(true)}>
+            <FileUp className="h-3.5 w-3.5" /> Import Footnotes
+          </Button>
           <Button
             size="sm"
             className="h-8 gap-1.5 text-xs"
@@ -888,6 +965,16 @@ function AssessmentsPage() {
               qc.invalidateQueries({
                 queryKey: ["assessments", selectedId, "items"],
               })
+            }
+          />
+          <ImportFootnotesDialog
+            open={importFootnotesOpen}
+            onClose={() => setImportFootnotesOpen(false)}
+            domainId={selectedDomain.id}
+            onImported={() =>
+              // Footnotes are fetched as part of the survey model query, keyed by
+              // domain code — bust that so a re-opened survey shows new footnotes.
+              qc.invalidateQueries({ queryKey: ["assessments", selectedDomain.code, "assessment"] })
             }
           />
         </>
