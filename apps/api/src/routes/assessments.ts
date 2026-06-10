@@ -149,8 +149,8 @@ router.post('/domains/import', requireAdmin, (req: Request, res: Response, next:
       const code = row[codeIdx]?.toUpperCase();
       const name = row[nameIdx];
       if (!code || !name) { skipped++; continue; }
-      const purpose = purposeIdx === -1 ? null : (row[purposeIdx] ?? null);
-      const introduction = introIdx === -1 ? null : (row[introIdx] ?? null);
+      const purpose = purposeIdx === -1 ? null : (row[purposeIdx] || null);
+      const introduction = introIdx === -1 ? null : (row[introIdx] || null);
       const [existing] = query<DomainRow>(
         'SELECT * FROM assessment_domains WHERE code = ? COLLATE NOCASE',
         [code],
