@@ -63,9 +63,12 @@ function parseCsv(text: string): { headers: string[]; rows: string[][] } {
         if (clean[i + 1] === '"') { field += '"'; i++; }
         else inQuotes = false;
       } else field += ch;
-    } else if (ch === '"') {
+    } else if (ch === '"' && field === "") {
       inQuotes = true;
       fieldWasQuoted = true;
+    } else if (ch === '"') {
+      // Stray quote mid-unquoted-field: treat as a literal char (non-conforming input).
+      field += ch;
     } else if (ch === ",") {
       pushField();
     } else if (ch === "\n") {
