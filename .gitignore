@@ -38,3 +38,8 @@ apps/web/playwright-report
 apps/web/blob-report
 
 .env
+
+# TLS material written by certbot on the host — contains private keys.
+# Never commit these.
+nginx/letsencrypt/
+nginx/certbot-www/

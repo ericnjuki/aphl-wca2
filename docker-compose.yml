@@ -40,10 +40,13 @@ services:
     depends_on:
       - api
     ports:
-      - "8066:80"
-      - "6443:443"
-      # - "80:80"
-      # - "443:443"
+      # Production (labworkforce.online) terminates TLS here, so the standard
+      # ports must be bound for Let's Encrypt HTTP-01 renewals to reach nginx.
+      - "80:80"
+      - "443:443"
+      # Swap for these when running locally alongside something already on 80/443.
+      # - "8066:80"
+      # - "6443:443"
     volumes:
       # Mount these once you're ready for HTTPS — certbot writes certs here.
       - ./nginx/letsencrypt:/etc/letsencrypt
