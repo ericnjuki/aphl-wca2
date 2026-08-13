@@ -1,0 +1,8 @@
+# Overlay for TLS_MODE=external — TLS is terminated by a reverse proxy that
+# already exists on the host (e.g. the box's system nginx). This container
+# only ever serves plain HTTP on one port. Use with:
+#   docker compose -f docker-compose.yml -f docker-compose.external.yml up -d
+services:
+  nginx:
+    ports:
+      - "${APP_PORT:-8888}:80"

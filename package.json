@@ -14,7 +14,8 @@
     "e2e": "pnpm --filter @workforce-competency/web run e2e",
     "e2e:ui": "pnpm --filter @workforce-competency/web run e2e:ui",
     "kill-dev": "pnpm --filter @workforce-competency/web run kill-dev",
-    "clean": "turbo run clean && rimraf node_modules apps/*/node_modules apps/*/dist"
+    "clean": "turbo run clean && rimraf node_modules apps/*/node_modules apps/*/dist",
+    "deploy": "node scripts/deploy.mjs"
   },
   "devDependencies": {
     "rimraf": "^6.0.1",

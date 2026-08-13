@@ -1,0 +1,13 @@
+# Overlay for TLS_MODE=own — this nginx container terminates TLS itself via
+# certbot. Use with: docker compose -f docker-compose.yml -f docker-compose.own-tls.yml up -d
+services:
+  nginx:
+    ports:
+      # Standard ports must be bound for Let's Encrypt HTTP-01 renewals to
+      # reach nginx, and for browsers to reach 443 directly.
+      - "${HTTP_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
+    volumes:
+      # certbot writes certs here.
+      - ./nginx/letsencrypt:/etc/letsencrypt
+      - ./nginx/certbot-www:/var/www/certbot
