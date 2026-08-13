@@ -19,7 +19,9 @@ RUN pnpm --filter @workforce-competency/web run build
 FROM nginx:1.27-alpine AS runtime
 
 RUN rm -f /etc/nginx/conf.d/default.conf
-COPY nginx/conf.d/default.conf /etc/nginx/conf.d/default.conf
+COPY nginx/conf.d/templates /etc/nginx/conf.d/templates
+COPY nginx/docker-entrypoint.d/10-render-conf.sh /docker-entrypoint.d/10-render-conf.sh
+RUN chmod +x /docker-entrypoint.d/10-render-conf.sh
 COPY --from=web-builder /app/apps/web/dist /usr/share/nginx/html
 
 EXPOSE 80 443

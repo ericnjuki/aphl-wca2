@@ -31,8 +31,6 @@ export const KB = 1024;
 
 export const HIDDEN_PLACEHOLDER = "**** **** **** ****";
 
-export const BASE_API_URL = "http://localhost:8092";
-
 export const JOINING_VALS = [
   { key: "join_1", symbol: "and", description: "join statements with 'AND'" },
   { key: "join_2", symbol: "or", description: "join statements with 'OR'" },

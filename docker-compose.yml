@@ -39,18 +39,17 @@ services:
     restart: unless-stopped
     depends_on:
       - api
-    ports:
-      # Production (labworkforce.online) terminates TLS here, so the standard
-      # ports must be bound for Let's Encrypt HTTP-01 renewals to reach nginx.
-      - "80:80"
-      - "443:443"
-      # Swap for these when running locally alongside something already on 80/443.
-      # - "8066:80"
-      # - "6443:443"
-    volumes:
-      # Mount these once you're ready for HTTPS — certbot writes certs here.
-      - ./nginx/letsencrypt:/etc/letsencrypt
-      - ./nginx/certbot-www:/var/www/certbot
+    environment:
+      # "own"      — this container terminates TLS itself via certbot (see
+      #              docker-compose.own-tls.yml).
+      # "external" — TLS is terminated by a reverse proxy already on the host
+      #              (see docker-compose.external.yml); this container only
+      #              ever serves plain HTTP.
+      TLS_MODE: ${TLS_MODE:-own}
+      DOMAIN: ${DOMAIN:?DOMAIN is required}
+      # Defaults to www.<DOMAIN> inside the container if unset; only used by
+      # TLS_MODE=own (see nginx/docker-entrypoint.d/10-render-conf.sh).
+      DOMAIN_WWW: ${DOMAIN_WWW:-}
     networks:
       - wca
 
