@@ -104,7 +104,7 @@ Turbo runs `tsc` on the API and `tsc -b && vite build` on the web. Outputs:
 - `apps/api/dist/` — compiled JS, run with `pnpm --filter @workforce-competency/api start`
 - `apps/web/dist/` — static bundle, serve with any static host or `pnpm --filter @workforce-competency/web preview`
 
-In production you'll want a reverse proxy so the browser sees a single origin. Point `/api/**` at the API process, everything else at the static bundle.
+For production (Docker, nginx, TLS, domain), see **[docs/DEPLOYMENT.md](./docs/DEPLOYMENT.md)**. `pnpm run deploy` drives the whole thing interactively.
 
 ---
 
