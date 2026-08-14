@@ -1,5 +1,5 @@
-# Overlay for TLS_MODE=own — this nginx container terminates TLS itself via
-# certbot. Use with: docker compose -f docker-compose.yml -f docker-compose.own-tls.yml up -d
+# Overlay for TLS_MODE=internal — this nginx container terminates TLS itself
+# via certbot. Use with: docker compose -f docker-compose.yml -f docker-compose.internal-tls.yml up -d
 services:
   nginx:
     ports:
