@@ -3,6 +3,7 @@ import env from './config/env';
 import { getDb, persistDb } from './db/database';
 import { runMigrations } from './db/migrations';
 import { runSeed } from './db/seed';
+import { seedAssessments } from './db/seed-assessments';
 import { backfillResponses } from './scripts/backfill-responses';
 
 async function start(): Promise<void> {
@@ -10,6 +11,7 @@ async function start(): Promise<void> {
   const db = await getDb();
   await runMigrations(db);
   await runSeed(db);
+  seedAssessments();
   backfillResponses();
   persistDb();
 
