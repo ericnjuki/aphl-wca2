@@ -31,6 +31,8 @@ COPY --from=prod-deps --chown=app:app /app/node_modules /app/node_modules
 COPY --from=prod-deps --chown=app:app /app/apps/api/node_modules /app/apps/api/node_modules
 COPY --from=build --chown=app:app /app/apps/api/dist /app/apps/api/dist
 COPY --chown=app:app apps/api/package.json /app/apps/api/package.json
+# Assessment catalogue CSVs, seeded into an empty database on first start.
+COPY --chown=app:app apps/api/seed-data /app/apps/api/seed-data
 
 USER app
 
