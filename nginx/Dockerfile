@@ -14,6 +14,11 @@ COPY apps/web ./apps/web
 ARG VITE_API_URL=/api/v1
 ENV VITE_API_URL=$VITE_API_URL
 
+# Subpath the built SPA is mounted under (e.g. "/wca/"); defaults to root.
+# Rewrites every root-absolute asset URL Vite emits — see vite.config.ts.
+ARG VITE_BASE_URL=/
+ENV VITE_BASE_URL=$VITE_BASE_URL
+
 RUN pnpm --filter @workforce-competency/web run build
 
 FROM nginx:1.27-alpine AS runtime

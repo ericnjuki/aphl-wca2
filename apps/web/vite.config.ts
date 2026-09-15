@@ -4,6 +4,10 @@ import react from "@vitejs/plugin-react"
 import { defineConfig } from "vite"
 
 export default defineConfig({
+  // Lets the app be mounted under a subpath (e.g. "/wca/")
+  // Set via the VITE_BASE_URL build arg (nginx/Dockerfile); 
+  // defaults to "/" for a normal root deployment and local dev.
+  base: process.env.VITE_BASE_URL || '/',
   plugins: [
     react(),
     tailwindcss(),

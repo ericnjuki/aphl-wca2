@@ -77,6 +77,7 @@ async function writeEnv(values) {
 // domain/cert paths are asked for and an nginx snippet gets generated.
 
 const DOMAIN_RE = /^[a-zA-Z0-9.-]+$/;
+const BASE_PATH_RE = /^(\/[a-zA-Z0-9_-]+)+$/;
 const portValidate = (v) => {
   const n = Number(v);
   return Number.isInteger(n) && n > 0 && n <= 65535 ? true : 'Enter a valid port number (1-65535)';
@@ -126,6 +127,24 @@ const fieldDefs = [
           const val = v.trim();
           if (!val) return required ? 'A domain is required when TLS mode is "internal"' : true;
           return DOMAIN_RE.test(val) ? true : 'Enter a valid domain (letters, numbers, dots and hyphens only)';
+        },
+      });
+      return value.trim();
+    },
+  },
+  {
+    key: 'basePath',
+    label: 'Base path',
+    visible: () => true,
+    display: (s) => s.basePath || c.dim('/ (root)'),
+    ask: async (s) => {
+      const value = await input({
+        message: 'Subpath to mount the app under (e.g. /wca), or leave blank to serve at the domain root',
+        default: s.basePath || undefined,
+        validate: (v) => {
+          const val = v.trim();
+          if (!val) return true;
+          return BASE_PATH_RE.test(val) ? true : 'Use a leading slash, no trailing slash (e.g. /wca or /team/wca)';
         },
       });
       return value.trim();
@@ -253,6 +272,7 @@ async function collect(existing) {
   const settings = {
     tlsMode: existing.get('TLS_MODE') === 'internal' ? 'internal' : existing.has('TLS_MODE') ? 'external' : 'internal',
     domain: domain === '_' ? '' : domain,
+    basePath: existing.get('BASE_PATH') ?? '',
     httpPort: Number(existing.get('HTTP_PORT') ?? 80),
     httpsPort: Number(existing.get('HTTPS_PORT') ?? 443),
     appPort: Number(existing.get('APP_PORT') ?? 8888),
@@ -313,6 +333,7 @@ async function apply(settings) {
   const envValues = {
     TLS_MODE: settings.tlsMode === 'internal' ? 'internal' : 'external',
     DOMAIN: settings.domain || '_',
+    BASE_PATH: settings.basePath || '',
     CORS_ORIGINS: settings.corsOrigins,
     SESSION_SECRET: settings.sessionSecret,
     SESSION_COOKIE_SECURE: String(settings.cookieSecure),

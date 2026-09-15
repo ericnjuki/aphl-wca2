@@ -4,6 +4,9 @@ set -eu
 : "${TLS_MODE:=internal}"
 : "${DOMAIN:=_}"
 : "${DOMAIN_WWW:=www.${DOMAIN}}"
+# Subpath to mount the app under (e.g. "/wca"), no trailing slash. Empty
+# string means serve at domain root
+: "${BASE_PATH:=}"
 
 case "$TLS_MODE" in
   internal)
@@ -28,8 +31,8 @@ case "$TLS_MODE" in
     ;;
 esac
 
-export DOMAIN DOMAIN_WWW
+export DOMAIN DOMAIN_WWW BASE_PATH
 
-envsubst '${DOMAIN} ${DOMAIN_WWW}' < "$template" > /etc/nginx/conf.d/default.conf
+envsubst '${DOMAIN} ${DOMAIN_WWW} ${BASE_PATH}' < "$template" > /etc/nginx/conf.d/default.conf
 
-echo "10-render-conf.sh: rendered $template -> /etc/nginx/conf.d/default.conf (TLS_MODE=$TLS_MODE, DOMAIN=$DOMAIN)"
+echo "10-render-conf.sh: rendered $template -> /etc/nginx/conf.d/default.conf (TLS_MODE=$TLS_MODE, DOMAIN=$DOMAIN, BASE_PATH=${BASE_PATH:-/})"

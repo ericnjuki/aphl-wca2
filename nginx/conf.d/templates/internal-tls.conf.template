@@ -40,9 +40,12 @@ server {
 
     add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
 
-    # API reverse proxy — everything under /api/ goes to the Node service.
-    location /api/ {
-        proxy_pass http://api_upstream;
+    # API reverse proxy — everything under {BASE_PATH}/api/ goes to the Node
+    # service. proxy_pass's URI part strips whatever matched the location
+    # prefix and replaces it with /api/, so the upstream always sees
+    # /api/v1/... regardless of BASE_PATH (empty by default — root deploy).
+    location ${BASE_PATH}/api/ {
+        proxy_pass http://api_upstream/api/;
         proxy_http_version 1.1;
         proxy_set_header Host              $host;
         proxy_set_header X-Real-IP         $remote_addr;
@@ -54,26 +57,27 @@ server {
         proxy_send_timeout 60s;
     }
 
-    # Static assets — long cache with immutable hashes from Vite.
-    location /assets/ {
-        root /usr/share/nginx/html;
+    # Static assets — long cache with immutable hashes from Vite. `alias`
+    # (not `root`) so the BASE_PATH prefix is dropped when mapping to disk.
+    location ${BASE_PATH}/assets/ {
+        alias /usr/share/nginx/html/assets/;
         expires 1y;
         add_header Cache-Control "public, immutable";
         try_files $uri =404;
     }
 
-    # Correct MIME for sqlite-wasm.
-    location ~* \.wasm$ {
-        root /usr/share/nginx/html;
+    # Correct MIME for sqlite-wasm, at any prefix depth.
+    location ~* ^${BASE_PATH}/(.*\.wasm)$ {
+        alias /usr/share/nginx/html/$1;
         default_type application/wasm;
         add_header Cache-Control "public, max-age=31536000, immutable";
     }
 
     # SPA fallback — everything else serves index.html so React Router works.
-    location / {
-        root /usr/share/nginx/html;
+    location ${BASE_PATH}/ {
+        alias /usr/share/nginx/html/;
         index index.html;
-        try_files $uri $uri/ /index.html;
+        try_files $uri $uri/ ${BASE_PATH}/index.html;
     }
 
     gzip on;
