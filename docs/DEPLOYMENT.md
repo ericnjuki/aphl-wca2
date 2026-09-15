@@ -74,6 +74,31 @@ sudo cp deploy/generated/your-domain.conf /etc/nginx/sites-available/
 sudo nginx -t && sudo systemctl reload nginx
 ```
 
+### Variant: mounted under a path (no dedicated subdomain)
+
+The app supports this via `BASE_PATH` (see "Subpath deployment" below) — set it during `pnpm run deploy` (e.g. `BASE_PATH=/wca`), and this app's own nginx handles stripping the prefix internally before anything reaches the API. Your host's nginx needs nothing subpath-aware — just a normal prefix proxy dropped into whatever `server {}` block already handles that domain:
+
+```nginx
+location /wca/ {
+    proxy_pass http://localhost:8888/wca/;   # match your chosen APP_PORT + BASE_PATH
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_http_version 1.1;
+}
+```
+
+Note the trailing `/wca/` on `proxy_pass` — since this app's nginx expects to see the `/wca/` prefix in the request URI (it strips it internally), don't drop it here. This is a `location` block to add to an *existing* server block.
+
+---
+
+## Subpath deployment
+
+By default the app is served at the domain (or IP) root. Set `BASE_PATH` (e.g. `/wca`, no trailing slash) during `pnpm run deploy` to mount it under a subpath instead — useful when you don't have a dedicated subdomain available and need to host several apps off one domain by path. Works with any TLS mode.
+
+Under the hood: `BASE_PATH` becomes both a Vite build-time `base` (so every asset URL and in-app route is correctly prefixed) and an nginx `location` prefix (so `/wca/api/...` gets stripped back down to `/api/...` before ever reaching the API container — Express never needs to know about the prefix). Leave it blank for a normal root deployment; nothing else changes.
+
 ---
 
 ## Walkthrough B — brand-new plain server, no existing nginx, no domain yet, internal TLS

@@ -46,7 +46,7 @@ export class SQLiteClient {
     };
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     this.#sqlite3 = await (sqlite3InitModule as any)({
-      locateFile: (file: string) => `/${file}`,
+      locateFile: (file: string) => `${import.meta.env.BASE_URL}${file}`,
     });
     console.warn = originalWarn;
 
