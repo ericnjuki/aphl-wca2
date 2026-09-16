@@ -7,6 +7,12 @@ set -eu
 # Subpath to mount the app under (e.g. "/wca"), no trailing slash. Empty
 # string means serve at domain root
 : "${BASE_PATH:=}"
+# Optional: when set (and BASE_PATH is non-empty), the domain's root path
+# 301-redirects here instead of 404ing — used when this same container is
+# also reachable at another domain that used to serve the app at "/" and now
+# only serves it under BASE_PATH. Include the scheme, e.g.
+# "https://apps.example.com/wca".
+: "${ROOT_REDIRECT_URL:=}"
 
 case "$TLS_MODE" in
   internal)
@@ -31,8 +37,18 @@ case "$TLS_MODE" in
     ;;
 esac
 
-export DOMAIN DOMAIN_WWW BASE_PATH
+if [ -n "$BASE_PATH" ] && [ -n "$ROOT_REDIRECT_URL" ]; then
+  ROOT_REDIRECT_BLOCK="location / {
+        return 301 ${ROOT_REDIRECT_URL}\$request_uri;
+    }"
+else
+  ROOT_REDIRECT_BLOCK=""
+fi
 
-envsubst '${DOMAIN} ${DOMAIN_WWW} ${BASE_PATH}' < "$template" > /etc/nginx/conf.d/default.conf
+export DOMAIN DOMAIN_WWW BASE_PATH ROOT_REDIRECT_BLOCK
 
-echo "10-render-conf.sh: rendered $template -> /etc/nginx/conf.d/default.conf (TLS_MODE=$TLS_MODE, DOMAIN=$DOMAIN, BASE_PATH=${BASE_PATH:-/})"
+envsubst '${DOMAIN} ${DOMAIN_WWW} ${BASE_PATH}' < "$template" | \
+  awk 'index($0, "ROOT_REDIRECT_BLOCK") { print ENVIRON["ROOT_REDIRECT_BLOCK"]; next } { print }' \
+  > /etc/nginx/conf.d/default.conf
+
+echo "10-render-conf.sh: rendered $template -> /etc/nginx/conf.d/default.conf (TLS_MODE=$TLS_MODE, DOMAIN=$DOMAIN, BASE_PATH=${BASE_PATH:-/}, ROOT_REDIRECT_URL=${ROOT_REDIRECT_URL:-<unset>})"

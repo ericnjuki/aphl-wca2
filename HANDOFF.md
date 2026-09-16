@@ -26,10 +26,19 @@ decisions log (durable rules go in `DECISIONS.md` instead, then get deleted from
   a symptom of staleness.
 
 ## Current State
-Uncommitted changes on `main` implement subpath deployment support (a `BASE_PATH` env var, e.g. `/wca`, letting the app mount under a path instead of only at the domain root): `vite.config.ts` build-time `base`, `sqlite-client-provider.tsx` sqlite-wasm loader path, `nginx/Dockerfile` build arg plumbing, `docker-compose.yml` `BASE_PATH`/`VITE_BASE_URL`/`VITE_API_URL` wiring, both nginx TLS templates (`location`/`alias` prefixed by `${BASE_PATH}`), `10-render-conf.sh` envsubst, `scripts/deploy.mjs` interactive "Base path" prompt, and `docs/DEPLOYMENT.md` documentation. Changes are internally consistent and appear complete; not yet reviewed for correctness/tested live, and not committed.
+`BASE_PATH` subpath-deployment feature (commit `aa5fefe`) and the upstream assessment-seeding merge are committed and pushed to `fork/main`, but **not yet redeployed to prod** — `analytics-svr`'s running `wca-nginx`/`wca-api` are still on old commit `feac461`.
+
+A prod rollout plan exists at `plans/2026-09-16-wca-subpath-deploy.md` (single instance, `BASE_PATH=/wca`, redirect `wca.nphl.go.ke`'s root to `apps.nphl.go.ke/wca` from the same container) — **approved by the user in discussion, but not yet implemented.** See that plan file for full detail and rationale (a two-instance design was considered and rejected — see `DECISIONS.md` → Architecture for why one build can't serve two base paths).
 
 ## Open Threads
-- Subpath deployment feature (see Current State) is unreviewed and untested — needs a look at nginx `alias`/regex correctness and a live deploy test (e.g. `BASE_PATH=/wca`) before committing.
+- **Not started**: add the optional `ROOT_REDIRECT_URL` nginx feature (plan step 2) — needs changes
+  to `nginx/conf.d/templates/*.conf.template` and `nginx/docker-entrypoint.d/10-render-conf.sh`.
+- **Not started**: redeploy `analytics-svr`'s `wca-nginx`/`wca-api` with `BASE_PATH=/wca` +
+  `ROOT_REDIRECT_URL=https://apps.nphl.go.ke/wca`, then verify both `apps.nphl.go.ke/wca` and the
+  `wca.nphl.go.ke` redirect live.
+- **Not started**: back up `aphl-wca-postgresdb-1` (old leftover container, port 5434) to
+  `~/Downloads/aphl-wca-postgres-backup-<date>.sql.gz` on this machine, then stop+remove it and
+  `aphl-wca-aphl-api-1` (port 6868).
 
 ## Session Handoff — do this next
-This session created `CLAUDE.md`, `DECISIONS.md`, and `HANDOFF.md` (plan-in-`/plans/` workflow, commit-only-on-request, shadcn/existing-conventions for UI), then reviewed the pending diffs and identified them as one coherent subpath-deployment feature (see Current State/Open Threads). Next session: confirm with the user whether they want a live test pass of `BASE_PATH` deployment before committing, per the plan-workflow/testing rules in `CLAUDE.md`.
+This session: created the doc trio, committed+pushed the `BASE_PATH` feature, merged in upstream's assessment-seeding feature, did prod recon on `analytics-svr` (found the existing deployment, the stale Proxmox `/api`→6868 route, and the pre-wired `apps.nphl.go.ke` `/wca/` nginx block), then — after the user pushed back on a two-instance design — redesigned to a single-instance approach with a same-container redirect, and wrote it up in `plans/2026-09-16-wca-subpath-deploy.md`. **Execution was explicitly paused before any prod changes were made** (no files changed on `analytics-svr`, no containers touched). Next session: implement the plan (add `ROOT_REDIRECT_URL`, redeploy, verify, then back up + retire the old containers) — SSH via `$env:WINDIR\System32\OpenSSH\ssh.exe -A nphlict@100.98.132.120` (Git Bash's ssh fails here, see `DECISIONS.md` → Infrastructure).

@@ -80,6 +80,12 @@ server {
         try_files $uri $uri/ ${BASE_PATH}/index.html;
     }
 
+    # Optional root-path redirect — rendered only when BASE_PATH and
+    # ROOT_REDIRECT_URL are both set (see docker-entrypoint script). Never
+    # collides with the ${BASE_PATH}/ locations above since a bare "/"
+    # request doesn't match a non-empty prefix.
+    ROOT_REDIRECT_BLOCK
+
     gzip on;
     gzip_vary on;
     gzip_min_length 1024;
