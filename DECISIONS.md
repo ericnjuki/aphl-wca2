@@ -102,6 +102,25 @@ Durable business rules and app-level architecture/design decisions for this proj
   `aphl-wca-postgresdb-1` (port 5434, `postgres:14.5`) are still running on `analytics-svr` but
   unused/stale as of 2026-09-16 — confirmed dead once `wca.nphl.go.ke`'s traffic is fully migrated
   to this repo (see the plan above). Back up the postgres data before removing.
+- **`apps.nphl.go.ke` has a third proxy hop we don't control, above the two we do.** TLS for that
+  domain does not terminate on `analytics-svr` — confirmed via `ss -tlnp` showing nothing listening
+  on port 443 there, only 80. The actual TLS terminator is the Proxmox parent host (the same
+  inaccessible layer already documented above for `wca.nphl.go.ke`), which proxies to
+  `analytics-svr:80` in plain HTTP. Consequence: any `proxy_set_header X-Forwarded-Proto $scheme;`
+  on `analytics-svr`'s own nginx (`/etc/nginx/conf.d/0-default.conf`) evaluates `$scheme` as `http`
+  (that hop's own local view), silently overwriting whatever the *real* TLS-terminating layer sent
+  — it must instead relay the upstream value (`proxy_set_header X-Forwarded-Proto
+  $http_x_forwarded_proto;`), exactly like the existing fix in
+  `nginx/conf.d/templates/external-tls.conf.template` (see Architecture — same pattern, one hop
+  further out). Symptom when this is wrong: Express's `trust proxy` resolves `req.secure` to
+  `false`, and `express-session` **silently drops `Set-Cookie` with no error or log line** even
+  though `cookie.secure` is statically configured `true` — login itself returns 200 (unauthenticated
+  route), but every subsequent authenticated call 401s with an empty session, because no cookie ever
+  reached the browser. Fixed on `analytics-svr` 2026-09-16; verified via direct response-header
+  inspection (`curl -i` showing `set-cookie` present/absent) — `docker compose logs api` shows no
+  error for this failure mode, so don't rely on it to rule this out. Any future subpath deploy behind
+  a proxy chain we don't fully control must have every hop in that chain checked individually for
+  this, not just the outermost one we can see.
 - **`CORS_ORIGINS` must be the exact origin the browser actually sends** (scheme + host, e.g.
   `https://apps.nphl.go.ke`, no path/port unless the port is genuinely part of the origin) — `cors.ts`
   does an exact-match check (`apps/api/src/middleware/cors.ts`) with no wildcarding, and

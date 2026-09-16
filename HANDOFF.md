@@ -27,12 +27,16 @@ decisions log (durable rules go in `DECISIONS.md` instead, then get deleted from
 
 ## Current State
 `apps.nphl.go.ke/wca` and the `wca.nphl.go.ke` → `apps.nphl.go.ke/wca` redirect are **live in prod
-and browser-verified** as of 2026-09-16 — login works (after the `CORS_ORIGINS` fix below), the
-redirect lands correctly, no known issues. `analytics-svr`'s `wca-nginx`/`wca-api` run commit
-`fdd29e2` with `BASE_PATH=/wca`, `ROOT_REDIRECT_URL=https://apps.nphl.go.ke/wca`, and
-`CORS_ORIGINS=https://apps.nphl.go.ke` in `.env`. UAT (`143.198.180.142:20822`,
-`~/projects/aphl-wca2`, `wca.ken-info.org`) is also on `fdd29e2` (pulled + rebuilt this session from
-9 commits behind), containers healthy.
+and browser-verified** as of 2026-09-16, including the forced first-login password-change flow —
+login, session-cookie persistence, and change-password all confirmed working end-to-end (after the
+`X-Forwarded-Proto` fix below), redirect lands correctly, no known issues. `analytics-svr`'s
+`wca-nginx`/`wca-api` run commit `fdd29e2` with `BASE_PATH=/wca`,
+`ROOT_REDIRECT_URL=https://apps.nphl.go.ke/wca`, and `CORS_ORIGINS=https://apps.nphl.go.ke` in
+`.env`. Prod DB (`aphl-wca2_api_data` volume on `analytics-svr`) was wiped and re-seeded fresh
+2026-09-16 (see below) — currently just the seeded `admin`/`APHLwca2024` user (`is_first_login:
+true`) and the standard assessment catalog, no other data. UAT (`143.198.180.142:20822`,
+`~/projects/aphl-wca2`, `wca.ken-info.org`) is also on `fdd29e2` (pulled + rebuilt from 9 commits
+behind on 2026-09-16), containers healthy; UAT's own DB was **not** touched by this session's reset.
 
 ## Open Threads
 - **Not started**: back up `aphl-wca-postgresdb-1` (old leftover container, port 5434) to
@@ -41,13 +45,18 @@ redirect lands correctly, no known issues. `analytics-svr`'s `wca-nginx`/`wca-ap
   `plans/2026-09-16-wca-subpath-deploy.md`.
 
 ## Session Handoff — do this next
-This session did the first live browser test of `apps.nphl.go.ke/wca`: login failed with a CORS
-error, traced via `docker compose logs api` on `analytics-svr` to a stale `CORS_ORIGINS=http://
-localhost:8888` in prod `.env` (predates the `apps.nphl.go.ke` vhost) — fixed by setting it to the
-real origin and restarting `wca-api`; confirmed working after. Also confirmed the Next.js
-`/_next/` referer-routing block in `analytics-svr`'s shared nginx conf doesn't affect `/wca/`
-(longest-prefix match, unrelated path). Separately, discovered UAT (`aphl-ke-prod2`,
-`~/projects/aphl-wca2`) *does* have a deployment for this repo — `DECISIONS.md` was stale on that —
-and brought it up to date (was 9 commits behind). See `DECISIONS.md` → Infrastructure for the
-`CORS_ORIGINS` gotcha (durable rule for future deploys). Next session: the postgres backup + old
-container retirement is the only remaining open item (see Open Threads).
+This session diagnosed and fixed a 401 on the forced first-login password-change flow on
+`apps.nphl.go.ke/wca`: `Set-Cookie` was never reaching the browser because `analytics-svr`'s own
+nginx (`/etc/nginx/conf.d/0-default.conf`) overwrote `X-Forwarded-Proto` with its own `$scheme`
+(always `http`, since real TLS terminates one hop further out on the Proxmox parent host) —
+Express's `trust proxy` resolved `req.secure` to `false`, and `express-session` silently dropped the
+cookie. Fixed by relaying the real upstream header (`$http_x_forwarded_proto`) instead of
+overwriting it, then reloaded nginx; verified via direct response-header inspection through the
+public URL. See `DECISIONS.md` → Infrastructure for the durable rule (there's a third proxy hop
+above `analytics-svr` we don't control, and it needs checking too for any future subpath deploy).
+Because fixing the bug mid-diagnosis meant a test run actually completed a password change against
+the live seeded admin account, the prod DB (`aphl-wca2_api_data` volume) was deliberately wiped and
+the app was restarted to self-reseed to a clean first-deploy state — confirmed via container startup
+logs (migrations + seed) and a final read-only login check that did not touch change-password.
+Nothing else open from this session; next up is the Open Threads item above (postgres backup +
+old-container retirement).
