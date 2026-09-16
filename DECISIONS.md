@@ -61,11 +61,27 @@ Durable business rules and app-level architecture/design decisions for this proj
   Asking Auto Mode to add a permission rule that grants Bash-tool SSH access is itself blocked
   ("Auto-Mode Bypass") — that path doesn't work either; use the PowerShell tool instead of trying
   to unblock Bash.
-- **UAT host: not yet confirmed for this project.** Sibling apps (`labmapping-dashboard`,
-  `nphl-dashboard-plotly`, `partners-nphl`) share a UAT box at `ericn@143.198.180.142 -p 20822`
-  (Windows Terminal alias `aphl-ke-prod2`, repo lives at `~/projects/<repo-name>`, no `node`/`npm`
-  on the host — Docker only), but this repo (`workforce-competency`) has no recorded UAT deployment
-  there or elsewhere yet — confirm with the user before assuming that host applies here.
+- **Auto Mode still blocks specific prod actions via the PowerShell tool even once SSH itself is
+  allowed** — confirmed 2026-09-16 doing the `/wca` rollout. Reads of files that look like secrets
+  (e.g. `cat .env`) and prod-mutating commands (`sed -i` on `.env`, `docker compose up --build`)
+  each got their own separate classifier block ("Production Reads" / "Blocked by classifier"),
+  independent of the SSH-itself block above. Two things resolved it, and **both were needed**:
+  (1) narrowing the read to just the non-secret keys (`grep -E '^(BASE_PATH|...)=' .env` instead of
+  `cat .env`) got past the secrets-read block; (2) the user adding a
+  `"PowerShell(& \"$env:WINDIR\\System32\\OpenSSH\\ssh.exe\" -A nphlict@*)"` allow rule to
+  `~/.claude/settings.json` (global, not the per-project `.claude/settings.json` — Claude cannot
+  edit either file itself; editing settings is its own separate "Auto-Mode Bypass" block) got past
+  the `.env` write and the `docker compose up --build` blocks. The classifier appears to reason at
+  least partly on command *shape* (the allow rule measurably changed its behavior), not purely
+  semantically — so a correctly-scoped allow rule is worth trying before assuming a blocked prod
+  action needs the user to run it by hand.
+- **UAT host: confirmed for this project as of 2026-09-16** — `ericn@143.198.180.142 -p 20822`
+  (Windows Terminal alias `aphl-ke-prod2`, repo lives at `~/projects/aphl-wca2`, no `node`/`npm` on
+  the host — Docker only, same box sibling apps `labmapping-dashboard`, `nphl-dashboard-plotly`,
+  `partners-nphl` share). Deployed as a plain root-domain instance (`DOMAIN=wca.ken-info.org`, no
+  `BASE_PATH`), rebuilt via `docker compose -f docker-compose.yml -f docker-compose.external.yml up
+  -d --build` (matches `TLS_MODE=external`). Update by SSHing in, `git pull origin main`, then that
+  same rebuild command — no `.env` changes needed unless `CORS_ORIGINS`/`DOMAIN` actually change.
 - **This repo is deployed at `~/projects/aphl-wca2`** on that host as containers `wca-nginx` (host
   port 8888) + `wca-api` (internal only), via `docker compose -f docker-compose.yml -f
   docker-compose.external.yml up -d --build` (matches `TLS_MODE=external` in its `.env` — TLS
@@ -86,3 +102,15 @@ Durable business rules and app-level architecture/design decisions for this proj
   `aphl-wca-postgresdb-1` (port 5434, `postgres:14.5`) are still running on `analytics-svr` but
   unused/stale as of 2026-09-16 — confirmed dead once `wca.nphl.go.ke`'s traffic is fully migrated
   to this repo (see the plan above). Back up the postgres data before removing.
+- **`CORS_ORIGINS` must be the exact origin the browser actually sends** (scheme + host, e.g.
+  `https://apps.nphl.go.ke`, no path/port unless the port is genuinely part of the origin) — `cors.ts`
+  does an exact-match check (`apps/api/src/middleware/cors.ts`) with no wildcarding, and
+  `docker-compose.yml` silently defaults it to `http://localhost` if unset in `.env`. A deploy behind
+  a reverse-proxy vhost (subpath or otherwise) whose public origin differs from whatever `.env` was
+  copied/templated from will pass health checks and serve pages fine, but every authenticated API
+  call (login included) fails client-side as a CORS error with no server-side symptom beyond the
+  `[error] CORS: origin '...' not allowed` log line — check `docker compose logs api` first for this
+  class of "login doesn't work but the page loads" report. Confirmed on `analytics-svr` 2026-09-16:
+  `.env` had a stale `CORS_ORIGINS=http://localhost:8888` from before the `apps.nphl.go.ke` vhost
+  existed; fixed by setting it to the real public origin and restarting the `api` container (env vars
+  are read at container start only, not live).
