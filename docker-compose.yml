@@ -57,6 +57,10 @@ services:
       # Subpath to mount the app under (e.g. "/wca"), no trailing slash.
       # Empty = serve at domain root. Independent of TLS_MODE
       BASE_PATH: ${BASE_PATH:-}
+      # Optional: when BASE_PATH is set, redirects this domain's root path to
+      # ROOT_REDIRECT_URL instead of 404ing (see 10-render-conf.sh). Empty =
+      # no redirect rendered.
+      ROOT_REDIRECT_URL: ${ROOT_REDIRECT_URL:-}
     networks:
       - wca
 
