@@ -26,19 +26,28 @@ decisions log (durable rules go in `DECISIONS.md` instead, then get deleted from
   a symptom of staleness.
 
 ## Current State
-`BASE_PATH` subpath-deployment feature (commit `aa5fefe`) and the upstream assessment-seeding merge are committed and pushed to `fork/main`, but **not yet redeployed to prod** — `analytics-svr`'s running `wca-nginx`/`wca-api` are still on old commit `feac461`.
-
-A prod rollout plan exists at `plans/2026-09-16-wca-subpath-deploy.md` (single instance, `BASE_PATH=/wca`, redirect `wca.nphl.go.ke`'s root to `apps.nphl.go.ke/wca` from the same container) — **approved by the user in discussion, but not yet implemented.** See that plan file for full detail and rationale (a two-instance design was considered and rejected — see `DECISIONS.md` → Architecture for why one build can't serve two base paths).
+`apps.nphl.go.ke/wca` and the `wca.nphl.go.ke` → `apps.nphl.go.ke/wca` redirect are **live in prod
+and browser-verified** as of 2026-09-16 — login works (after the `CORS_ORIGINS` fix below), the
+redirect lands correctly, no known issues. `analytics-svr`'s `wca-nginx`/`wca-api` run commit
+`fdd29e2` with `BASE_PATH=/wca`, `ROOT_REDIRECT_URL=https://apps.nphl.go.ke/wca`, and
+`CORS_ORIGINS=https://apps.nphl.go.ke` in `.env`. UAT (`143.198.180.142:20822`,
+`~/projects/aphl-wca2`, `wca.ken-info.org`) is also on `fdd29e2` (pulled + rebuilt this session from
+9 commits behind), containers healthy.
 
 ## Open Threads
-- **Not started**: add the optional `ROOT_REDIRECT_URL` nginx feature (plan step 2) — needs changes
-  to `nginx/conf.d/templates/*.conf.template` and `nginx/docker-entrypoint.d/10-render-conf.sh`.
-- **Not started**: redeploy `analytics-svr`'s `wca-nginx`/`wca-api` with `BASE_PATH=/wca` +
-  `ROOT_REDIRECT_URL=https://apps.nphl.go.ke/wca`, then verify both `apps.nphl.go.ke/wca` and the
-  `wca.nphl.go.ke` redirect live.
 - **Not started**: back up `aphl-wca-postgresdb-1` (old leftover container, port 5434) to
   `~/Downloads/aphl-wca-postgres-backup-<date>.sql.gz` on this machine, then stop+remove it and
-  `aphl-wca-aphl-api-1` (port 6868).
+  `aphl-wca-aphl-api-1` (port 6868) — plan step 4, the only remaining step in
+  `plans/2026-09-16-wca-subpath-deploy.md`.
 
 ## Session Handoff — do this next
-This session: created the doc trio, committed+pushed the `BASE_PATH` feature, merged in upstream's assessment-seeding feature, did prod recon on `analytics-svr` (found the existing deployment, the stale Proxmox `/api`→6868 route, and the pre-wired `apps.nphl.go.ke` `/wca/` nginx block), then — after the user pushed back on a two-instance design — redesigned to a single-instance approach with a same-container redirect, and wrote it up in `plans/2026-09-16-wca-subpath-deploy.md`. **Execution was explicitly paused before any prod changes were made** (no files changed on `analytics-svr`, no containers touched). Next session: implement the plan (add `ROOT_REDIRECT_URL`, redeploy, verify, then back up + retire the old containers) — SSH via `$env:WINDIR\System32\OpenSSH\ssh.exe -A nphlict@100.98.132.120` (Git Bash's ssh fails here, see `DECISIONS.md` → Infrastructure).
+This session did the first live browser test of `apps.nphl.go.ke/wca`: login failed with a CORS
+error, traced via `docker compose logs api` on `analytics-svr` to a stale `CORS_ORIGINS=http://
+localhost:8888` in prod `.env` (predates the `apps.nphl.go.ke` vhost) — fixed by setting it to the
+real origin and restarting `wca-api`; confirmed working after. Also confirmed the Next.js
+`/_next/` referer-routing block in `analytics-svr`'s shared nginx conf doesn't affect `/wca/`
+(longest-prefix match, unrelated path). Separately, discovered UAT (`aphl-ke-prod2`,
+`~/projects/aphl-wca2`) *does* have a deployment for this repo — `DECISIONS.md` was stale on that —
+and brought it up to date (was 9 commits behind). See `DECISIONS.md` → Infrastructure for the
+`CORS_ORIGINS` gotcha (durable rule for future deploys). Next session: the postgres backup + old
+container retirement is the only remaining open item (see Open Threads).
