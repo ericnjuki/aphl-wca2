@@ -45,18 +45,12 @@ behind on 2026-09-16), containers healthy; UAT's own DB was **not** touched by t
   `plans/2026-09-16-wca-subpath-deploy.md`.
 
 ## Session Handoff — do this next
-This session diagnosed and fixed a 401 on the forced first-login password-change flow on
-`apps.nphl.go.ke/wca`: `Set-Cookie` was never reaching the browser because `analytics-svr`'s own
-nginx (`/etc/nginx/conf.d/0-default.conf`) overwrote `X-Forwarded-Proto` with its own `$scheme`
-(always `http`, since real TLS terminates one hop further out on the Proxmox parent host) —
-Express's `trust proxy` resolved `req.secure` to `false`, and `express-session` silently dropped the
-cookie. Fixed by relaying the real upstream header (`$http_x_forwarded_proto`) instead of
-overwriting it, then reloaded nginx; verified via direct response-header inspection through the
-public URL. See `DECISIONS.md` → Infrastructure for the durable rule (there's a third proxy hop
-above `analytics-svr` we don't control, and it needs checking too for any future subpath deploy).
-Because fixing the bug mid-diagnosis meant a test run actually completed a password change against
-the live seeded admin account, the prod DB (`aphl-wca2_api_data` volume) was deliberately wiped and
-the app was restarted to self-reseed to a clean first-deploy state — confirmed via container startup
-logs (migrations + seed) and a final read-only login check that did not touch change-password.
-Nothing else open from this session; next up is the Open Threads item above (postgres backup +
-old-container retirement).
+This session (2026-09-18) was a short doc-only follow-up to the 2026-09-16 work described in
+Current State above (the `X-Forwarded-Proto`/cookie fix and prod DB reset are already durable in
+`DECISIONS.md` and reflected there, not repeated here). It recorded one new fact in `DECISIONS.md` →
+Infrastructure: this operator has **no write access to `origin`**
+(`APHL-Global-Health/workforce-competency`) — the local `main` tracks `fork`
+(`ericnjuki/aphl-wca2`) instead, so a bare `git push` goes to `fork`, not `origin`; getting a change
+into `origin` needs someone with write access there. Nothing else changed this session. Next session:
+the postgres backup + old-container retirement is still the only open item (see Open Threads) —
+otherwise pick up wherever the next task points.
