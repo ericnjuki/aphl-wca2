@@ -41,6 +41,12 @@ Durable business rules and app-level architecture/design decisions for this proj
   compose overlay files, runs `docker compose up -d --build`.
 
 ## Infrastructure
+- **`origin` (`git@github.com:APHL-Global-Health/workforce-competency.git`) is read-only for this
+  operator — no write access.** The local `main` branch tracks `fork`
+  (`git@github.com:ericnjuki/aphl-wca2.git`) instead, and `git push` without an explicit remote
+  pushes there, not to `origin`. `git status`/`git push` output referencing "fork/main" is expected,
+  not a misconfiguration. Getting a change into `origin` requires whoever has write access there
+  (e.g. via a PR from `fork`), not a direct push from this machine.
 - **Prod host: `analytics-svr`** (`nphlict@100.98.132.120` via Tailscale, LAN IP `172.16.0.151`,
   passwordless). SSH from this Windows machine must go through the **Windows native OpenSSH
   client** (`$env:WINDIR\System32\OpenSSH\ssh.exe -A nphlict@100.98.132.120`), not Git Bash's own
