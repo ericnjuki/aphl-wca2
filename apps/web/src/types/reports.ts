@@ -1,6 +1,6 @@
 // Response shapes for /api/v1/reports — keep in sync with api/src/routes/reports.ts.
 
-export type ReportLevel = 'national' | 'region' | 'facility' | 'department' | 'individual';
+export type ReportLevel = 'national' | 'region' | 'district' | 'facility' | 'department' | 'individual';
 
 export type MaturityLevel = 0 | 1 | 2 | 3 | 4;
 
@@ -42,13 +42,30 @@ export interface NationalReportResponse {
 }
 
 export interface RegionItem extends MaturityCounts {
-  facility_id: number;
-  facility_name: string;
+  district_id: number;
+  district_name: string;
+}
+export interface UndistrictedFacility {
+  id: number;
+  name: string;
 }
 export interface RegionReportResponse {
   level: 'region';
   region: { id: number; name: string };
   items: RegionItem[];
+  // Facilities in this region with no district yet — listed so they stay reachable.
+  undistricted_facilities: UndistrictedFacility[];
+  meta: ReportMeta;
+}
+
+export interface DistrictItem extends MaturityCounts {
+  facility_id: number;
+  facility_name: string;
+}
+export interface DistrictReportResponse {
+  level: 'district';
+  district: { id: number; name: string; region_id: number; region_name: string | null };
+  items: DistrictItem[];
   meta: ReportMeta;
 }
 
@@ -58,7 +75,14 @@ export interface FacilityItem extends MaturityCounts {
 }
 export interface FacilityReportResponse {
   level: 'facility';
-  facility: { id: number; name: string; region_id: number | null };
+  facility: {
+    id: number;
+    name: string;
+    region_id: number | null;
+    region_name: string | null;
+    district_id: number | null;
+    district_name: string | null;
+  };
   items: FacilityItem[];
   meta: ReportMeta;
 }
@@ -112,3 +136,11 @@ export interface ReportFilters {
   competency_value?: string;
   approved_only?: boolean;
 }
+
+export type AnyReport =
+  | NationalReportResponse
+  | RegionReportResponse
+  | DistrictReportResponse
+  | FacilityReportResponse
+  | DepartmentReportResponse
+  | IndividualReportResponse;

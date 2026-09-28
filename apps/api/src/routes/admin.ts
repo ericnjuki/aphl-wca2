@@ -5,11 +5,14 @@ import { SqlValue } from 'sql.js';
 import { query, execute, transaction } from '../db/database';
 import { requireAuth, requirePasswordChanged, requireAdmin } from '../middleware/auth';
 import { createError } from '../middleware/errorHandler';
+import districtsRouter from './admin-districts';
+import { parseCsv as parseCsvRfc } from '../lib/csv';
+import { resolveDistrict, backfillResponseDistrict } from '../lib/org';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 interface RegionRow    extends Record<string, unknown> { id: number; code: string; name: string; }
-interface FacilityRow  extends Record<string, unknown> { id: number; code: string; name: string; facility_type: string | null; region_id: number | null; }
+interface FacilityRow  extends Record<string, unknown> { id: number; code: string; name: string; facility_type: string | null; region_id: number | null; district_id: number | null; }
 interface DeptRow      extends Record<string, unknown> { id: number; code: string; name: string; }
 interface OrgRoleRow   extends Record<string, unknown> { id: number; code: string; name: string; }
 interface TitleRow     extends Record<string, unknown> { id: number; code: string; name: string; }
@@ -55,11 +58,12 @@ interface CrudConfig {
   table: string;
   fields: string[];          // updatable fields (code always included)
   uniqueConflictField?: string; // field name to show in 409 message
+  beforeDelete?: (id: number) => string | null; // non-null → 409 with that message
 }
 
 function makeCrudRouter(cfg: CrudConfig) {
   const r = Router();
-  const { table, fields } = cfg;
+  const { table, fields, beforeDelete } = cfg;
   const allFields = [...new Set(['code', 'name', ...fields])];
 
   // LIST
@@ -121,6 +125,8 @@ function makeCrudRouter(cfg: CrudConfig) {
       const id = Number(req.params.id);
       const [existing] = query(`SELECT id FROM ${table} WHERE id = ?`, [id]);
       if (!existing) return next(createError('Not found', 404));
+      const blocked = beforeDelete?.(id);
+      if (blocked) return next(createError(blocked, 409));
       execute(`DELETE FROM ${table} WHERE id = ?`, [id]);
       res.json({ message: 'Deleted' });
     } catch (err) { next(err); }
@@ -131,7 +137,15 @@ function makeCrudRouter(cfg: CrudConfig) {
 
 // ── Regions ───────────────────────────────────────────────────────────────────
 
-const regionsRouter = makeCrudRouter({ table: 'regions', fields: ['code', 'name'] });
+const regionsRouter = makeCrudRouter({
+  table: 'regions',
+  fields: ['code', 'name'],
+  // Invariant 4 — FKs aren't enforced, so check here.
+  beforeDelete: (id) => {
+    const [{ n }] = query<{ n: number }>('SELECT COUNT(*) AS n FROM districts WHERE region_id = ?', [id]);
+    return n > 0 ? `${n} ${n === 1 ? 'district is' : 'districts are'} still assigned to this region` : null;
+  },
+});
 
 regionsRouter.post('/import', requireAdmin, (req: Request, res: Response, next: NextFunction) => {
   try {
@@ -184,12 +198,14 @@ facilitiesRouter.use(requireAuth, requirePasswordChanged);
 
 facilitiesRouter.get('/', (_req, res: Response, next: NextFunction) => {
   try {
-    const facilities = query<FacilityRow & { region_name: string | null; department_ids: string | null }>(`
+    const facilities = query<FacilityRow & { region_name: string | null; district_name: string | null; department_ids: string | null }>(`
       SELECT f.*,
              r.name AS region_name,
+             d.name AS district_name,
              GROUP_CONCAT(fd.department_id) AS department_ids
       FROM facilities f
-      LEFT JOIN regions r ON r.id = f.region_id
+      LEFT JOIN regions r   ON r.id = f.region_id
+      LEFT JOIN districts d ON d.id = f.district_id
       LEFT JOIN facility_departments fd ON fd.facility_id = f.id
       GROUP BY f.id
       ORDER BY f.name ASC
@@ -215,13 +231,16 @@ facilitiesRouter.get('/:id', (req: Request, res: Response, next: NextFunction) =
 
 facilitiesRouter.post('/', requireAdmin, (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { code, name, facility_type, region_id, department_ids = [] } = req.body as {
-      code?: string; name?: string; facility_type?: string; region_id?: number; department_ids?: number[];
+    const { code, name, facility_type, district_id, department_ids = [] } = req.body as {
+      code?: string; name?: string; facility_type?: string; district_id?: unknown; department_ids?: number[];
     };
     if (!code || !name) return next(createError('code and name are required', 400));
+    // Region is derived from the district (invariant 1); any region_id in the body is ignored.
+    const district = resolveDistrict(district_id);
+    if (!district) return next(createError('district_id is required and must reference an existing district', 400));
     try {
-      execute('INSERT INTO facilities (code, name, facility_type, region_id) VALUES (?, ?, ?, ?)',
-        [code.toUpperCase(), name, facility_type ?? null, region_id ?? null]);
+      execute('INSERT INTO facilities (code, name, facility_type, region_id, district_id) VALUES (?, ?, ?, ?, ?)',
+        [code.toUpperCase(), name, facility_type ?? null, district.region_id, district.id]);
     } catch (e: unknown) {
       if (e instanceof Error && e.message.includes('UNIQUE'))
         return next(createError(`Facility code "${code.toUpperCase()}" already exists`, 409));
@@ -241,14 +260,18 @@ facilitiesRouter.put('/:id', requireAdmin, (req: Request, res: Response, next: N
     const id = Number(req.params.id);
     const [existing] = query<FacilityRow>('SELECT * FROM facilities WHERE id = ?', [id]);
     if (!existing) return next(createError('Facility not found', 404));
-    const {
-      code = existing.code, name = existing.name,
-      facility_type = existing.facility_type, region_id = existing.region_id,
-      department_ids,
-    } = req.body as { code?: string; name?: string; facility_type?: string | null; region_id?: number | null; department_ids?: number[]; };
+    const body = req.body as {
+      code?: string; name?: string; facility_type?: string | null; district_id?: unknown; department_ids?: number[];
+    };
+    const code = body.code ?? existing.code;
+    const name = body.name ?? existing.name;
+    const facility_type = body.facility_type === undefined ? existing.facility_type : body.facility_type;
+    const department_ids = body.department_ids;
+    const district = resolveDistrict(body.district_id ?? existing.district_id);
+    if (!district) return next(createError('district_id is required and must reference an existing district', 400));
     try {
-      execute(`UPDATE facilities SET code=?, name=?, facility_type=?, region_id=?, updated_at=datetime('now') WHERE id=?`,
-        [code.toUpperCase(), name, facility_type ?? null, region_id ?? null, id]);
+      execute(`UPDATE facilities SET code=?, name=?, facility_type=?, region_id=?, district_id=?, updated_at=datetime('now') WHERE id=?`,
+        [code.toUpperCase(), name, facility_type ?? null, district.region_id, district.id, id]);
     } catch (e: unknown) {
       if (e instanceof Error && e.message.includes('UNIQUE'))
         return next(createError(`Facility code "${code.toUpperCase()}" already exists`, 409));
@@ -259,6 +282,7 @@ facilitiesRouter.put('/:id', requireAdmin, (req: Request, res: Response, next: N
       for (const deptId of department_ids)
         execute('INSERT INTO facility_departments (facility_id, department_id) VALUES (?, ?)', [id, deptId]);
     }
+    backfillResponseDistrict(id, district.id);
     const currentDepts = query<{ department_id: number }>('SELECT department_id FROM facility_departments WHERE facility_id = ?', [id]);
     const [updated] = query<FacilityRow>('SELECT * FROM facilities WHERE id = ?', [id]);
     res.json({ facility: { ...updated, department_ids: currentDepts.map((d) => d.department_id) } });
@@ -279,26 +303,57 @@ facilitiesRouter.post('/import', requireAdmin, (req: Request, res: Response, nex
   try {
     const { csv } = req.body as { csv?: string };
     if (!csv) return next(createError('csv is required', 400));
-    const { headers, rows } = parseCsv(csv);
+    const { headers, rows } = parseCsvRfc(csv);
     const ci = (h: string) => headers.indexOf(h);
-    if (ci('facility_code') === -1 || ci('facility_name') === -1)
-      return next(createError('CSV must have facility_code and facility_name columns', 400));
-    let imported = 0, skipped = 0;
-    for (const row of rows) {
-      const code = row[ci('facility_code')]?.toUpperCase();
-      const name = row[ci('facility_name')];
-      if (!code || !name) { skipped++; continue; }
-      const facilityType = ci('facility_type') >= 0 ? row[ci('facility_type')] || null : null;
-      const regionCode = ci('region_code') >= 0 ? row[ci('region_code')] || null : null;
-      let regionId: number | null = null;
-      if (regionCode) {
-        const [reg] = query<{ id: number }>('SELECT id FROM regions WHERE code = ? COLLATE NOCASE', [regionCode]);
-        regionId = reg?.id ?? null;
-      }
-      try { execute('INSERT INTO facilities (code, name, facility_type, region_id) VALUES (?, ?, ?, ?)', [code, name, facilityType, regionId]); imported++; }
-      catch { skipped++; }
-    }
-    res.json({ imported, skipped });
+    if (ci('facility_code') === -1 || ci('facility_name') === -1 || ci('district_code') === -1)
+      return next(createError('CSV must have facility_code, facility_name and district_code columns', 400));
+
+    const cell = (row: string[], h: string) => (ci(h) >= 0 ? row[ci(h)] || null : null);
+    let imported = 0, updated = 0;
+    const errors: { row: number; reason: string }[] = [];
+
+    transaction(() => {
+      rows.forEach((row, i) => {
+        const line = i + 2; // header is line 1
+        const code = cell(row, 'facility_code')?.toUpperCase();
+        const name = cell(row, 'facility_name');
+        const districtCode = cell(row, 'district_code');
+        if (!code || !name || !districtCode) {
+          errors.push({ row: line, reason: 'facility_code, facility_name and district_code are required' });
+          return;
+        }
+        const [district] = query<{ id: number; region_id: number; region_code: string }>(
+          `SELECT d.id, d.region_id, r.code AS region_code
+           FROM districts d JOIN regions r ON r.id = d.region_id
+           WHERE d.code = ? COLLATE NOCASE`,
+          [districtCode],
+        );
+        if (!district) { errors.push({ row: line, reason: `Unknown district_code "${districtCode}"` }); return; }
+        const regionCode = cell(row, 'region_code');
+        if (regionCode && regionCode.toUpperCase() !== district.region_code.toUpperCase()) {
+          errors.push({
+            row: line,
+            reason: `region_code "${regionCode}" does not match district ${districtCode.toUpperCase()} (region ${district.region_code})`,
+          });
+          return;
+        }
+
+        const [existing] = query<{ id: number }>('SELECT id FROM facilities WHERE code = ? COLLATE NOCASE', [code]);
+        if (existing) {
+          // Existing code: only (re)assign its district — name/type/departments untouched.
+          execute(`UPDATE facilities SET district_id = ?, region_id = ?, updated_at = datetime('now') WHERE id = ?`,
+            [district.id, district.region_id, existing.id]);
+          backfillResponseDistrict(existing.id, district.id);
+          updated++;
+        } else {
+          execute('INSERT INTO facilities (code, name, facility_type, region_id, district_id) VALUES (?, ?, ?, ?, ?)',
+            [code, name, cell(row, 'facility_type'), district.region_id, district.id]);
+          imported++;
+        }
+      });
+    });
+
+    res.json({ imported, updated, skipped: errors.length, errors });
   } catch (err) { next(err); }
 });
 
@@ -585,6 +640,7 @@ usersRouter.post('/import', requireAdmin, async (req: Request, res: Response, ne
 // ── Mount sub-routers ─────────────────────────────────────────────────────────
 
 router.use('/regions',     regionsRouter);
+router.use('/districts',   districtsRouter);
 router.use('/departments', departmentsRouter);
 router.use('/facilities',  facilitiesRouter);
 router.use('/org-roles',   orgRolesRouter);

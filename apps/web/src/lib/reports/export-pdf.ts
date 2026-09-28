@@ -4,25 +4,13 @@
 import jsPDF from 'jspdf';
 import autoTable, { RowInput } from 'jspdf-autotable';
 import { toPng } from 'html-to-image';
-import type {
-  NationalReportResponse,
-  RegionReportResponse,
-  FacilityReportResponse,
-  DepartmentReportResponse,
-  IndividualReportResponse,
-} from '@/types/reports';
-
-type AnyReport =
-  | NationalReportResponse
-  | RegionReportResponse
-  | FacilityReportResponse
-  | DepartmentReportResponse
-  | IndividualReportResponse;
+import type { AnyReport } from '@/types/reports';
 
 function titleFor(r: AnyReport): string {
   switch (r.level) {
     case 'national':   return 'National report';
     case 'region':     return `Region · ${r.region.name}`;
+    case 'district':   return `District · ${r.district.name}`;
     case 'facility':   return `Facility · ${r.facility.name}`;
     case 'department': return `Department · ${r.department.name}`;
     case 'individual': return `Individual · ${r.user.first_name} ${r.user.last_name}`;
@@ -41,6 +29,14 @@ function breakdownHeadRows(r: AnyReport): { head: string[][]; body: RowInput[] }
         ]),
       };
     case 'region':
+      return {
+        head: [['District', 'Respondents', 'Avg', ...levels]],
+        body: r.items.map((i) => [
+          i.district_name, i.respondents, (i.avg_level ?? 0).toFixed(1),
+          i.count_beginner, i.count_competent, i.count_proficient, i.count_expert, i.count_na,
+        ]),
+      };
+    case 'district':
       return {
         head: [['Facility', 'Respondents', 'Avg', ...levels]],
         body: r.items.map((i) => [

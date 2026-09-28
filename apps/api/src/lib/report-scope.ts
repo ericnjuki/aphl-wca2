@@ -2,7 +2,7 @@
 //
 // Policy:
 //   - admin   → unrestricted.
-//   - staff   → may only view reports covering their own facility / department.
+//   - staff   → may only view reports covering their own facility / department / district / region.
 //               Requests for national or a different facility/region return 403.
 //               Their own individual report is always allowed.
 
@@ -14,6 +14,7 @@ export interface Scope {
   facilityId: number | null;
   departmentId: number | null;
   regionId: number | null;
+  districtId: number | null;
 }
 
 export function getScope(userId: number): Scope {
@@ -22,8 +23,9 @@ export function getScope(userId: number): Scope {
     facility_id: number | null;
     department_id: number | null;
     region_id: number | null;
+    district_id: number | null;
   }>(
-    `SELECT u.role, u.facility_id, u.department_id, f.region_id
+    `SELECT u.role, u.facility_id, u.department_id, f.region_id, f.district_id
      FROM users u LEFT JOIN facilities f ON f.id = u.facility_id
      WHERE u.id = ?`,
     [userId],
@@ -34,6 +36,7 @@ export function getScope(userId: number): Scope {
     facilityId: row?.facility_id ?? null,
     departmentId: row?.department_id ?? null,
     regionId: row?.region_id ?? null,
+    districtId: row?.district_id ?? null,
   };
 }
 
@@ -46,6 +49,7 @@ export function denyReason(
   requested:
     | { level: 'national' }
     | { level: 'region'; regionId: number }
+    | { level: 'district'; districtId: number }
     | { level: 'facility'; facilityId: number }
     | { level: 'department'; departmentId: number }
     | { level: 'user'; targetUserId: number },
@@ -59,6 +63,10 @@ export function denyReason(
       return scope.regionId === requested.regionId
         ? null
         : 'Staff users may not view reports for other regions';
+    case 'district':
+      return scope.districtId === requested.districtId
+        ? null
+        : 'Staff users may not view reports for other districts';
     case 'facility':
       return scope.facilityId === requested.facilityId
         ? null

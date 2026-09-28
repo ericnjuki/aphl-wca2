@@ -7,12 +7,13 @@ The Reports page aggregates approved assessment responses across the whole organ
 | Level         | What you see                                                         | Grouped by   |
 |---------------|----------------------------------------------------------------------|--------------|
 | National      | Every region, stacked-bar view + breakdown table                     | Region       |
-| Region        | Every facility inside the region                                     | Facility     |
+| Region        | Every district inside the region (plus facilities not yet assigned a district) | District |
+| District      | Every facility inside the district                                   | Facility     |
 | Facility      | Every department linked to the facility                              | Department   |
 | Department    | Every respondent in the department                                   | User         |
 | Individual    | Per-competency averages, a radar chart, strengths/gaps, subcompetency detail | Competency   |
 
-Drill down by **clicking a bar** in the stacked chart or **any row** in the breakdown table. The URL updates (`/reports/regions/:id`, `/reports/facilities/:id`, etc.) so your browser back button climbs back up.
+Drill down by **clicking a bar** in the stacked chart or **any row** in the breakdown table. The URL updates (`/reports/regions/:id`, `/reports/districts/:id`, `/reports/facilities/:id`, etc.) so your browser back button climbs back up.
 
 ## Filters (top bar)
 
@@ -36,11 +37,13 @@ Each stacked bar shows how many respondents landed in each level:
 
 - **Respondents** — distinct users matched by current filters
 - **Avg maturity** — weighted 1–4 average across all responses (N/A excluded)
-- **Regions / Facilities / Departments covered** — how many buckets have at least one respondent
+- **Regions / Districts / Facilities / Departments covered** — how many buckets have at least one respondent
 
 ## Unassigned banner
 
 If you see a yellow banner *"N respondents are not attributed to a region"*, it means those users completed assessments without a facility assignment, so their data doesn't flow into any regional bucket. Fix by editing their row on **Users** and setting a **Facility**. Note that existing unattributed rows stay unattributed — we snapshot org context at submission time so historical reports don't rewrite when someone transfers.
+
+On a **Region** report, the banner counts respondents whose facility has no district yet. Those facilities are listed under **Facilities without a district** so you can still open them. Assigning a district (Setup › Facilities, or a facilities CSV import) also attributes that facility's earlier responses to the district. Responses submitted before a facility or district moved region keep their original region, so they show as unassigned there rather than under the district.
 
 ## Export
 
@@ -54,4 +57,4 @@ Exports respect the current level, filters, and drill-down.
 
 ## Staff access
 
-Non-admin staff see reports **scoped to their own facility** only — they cannot open national or other-region views. Their own `/reports/users/:me` always works.
+Non-admin staff see reports **scoped to their own facility** only — they cannot open national or other-region views. They can also open the report for their own district. Their own `/reports/users/:me` always works.

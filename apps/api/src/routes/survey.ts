@@ -7,6 +7,7 @@ import {
   AssessmentItem as SurveyItem,
   DomainRef,
 } from '../lib/survey-responses';
+import { getOrgContext } from '../lib/org';
 
 interface SessionRow extends Record<string, unknown> {
   id: number;
@@ -170,16 +171,7 @@ router.post('/sessions/:id/complete', (req: Request, res: Response, next: NextFu
         )
       : [];
 
-    const [orgCtx] = query<{
-      facility_id: number | null;
-      department_id: number | null;
-      region_id: number | null;
-    }>(
-      `SELECT u.facility_id, u.department_id, f.region_id
-       FROM users u LEFT JOIN facilities f ON f.id = u.facility_id
-       WHERE u.id = ?`,
-      [userId],
-    );
+    const orgCtx = getOrgContext(userId);
 
     const responses = domain ? extractResponses(surveyDataStr, domain, items) : [];
 
@@ -210,8 +202,8 @@ router.post('/sessions/:id/complete', (req: Request, res: Response, next: NextFu
              (user_assessment_id, user_id, domain_id, domain_code,
               competency_value, subcompetency_value,
               response_level, response_text,
-              facility_id, department_id, region_id)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+              facility_id, department_id, region_id, district_id)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
           [
             sessionId, userId, r.domain_id, existing.domain_code,
             r.competency_value, r.subcompetency_value,
@@ -219,6 +211,7 @@ router.post('/sessions/:id/complete', (req: Request, res: Response, next: NextFu
             orgCtx?.facility_id ?? null,
             orgCtx?.department_id ?? null,
             orgCtx?.region_id ?? null,
+            orgCtx?.district_id ?? null,
           ],
         );
       }

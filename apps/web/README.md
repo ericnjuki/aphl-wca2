@@ -1,6 +1,6 @@
 # LabWorkforce — web
 
-Front end for **LabWorkforce**, a competency-assessment tool for laboratory workforces. Staff complete self-assessments against domain-specific frameworks, an admin reviews submissions, and results roll up from individuals through departments, facilities, regions and national level with charts and CSV / Excel / PDF export.
+Front end for **LabWorkforce**, a competency-assessment tool for laboratory workforces. Staff complete self-assessments against domain-specific frameworks, an admin reviews submissions, and results roll up from individuals through departments, facilities, districts, regions and national level with charts and CSV / Excel / PDF export.
 
 This package (`web/`) is the browser app. It pairs with the Express API in [`../api/`](../api/).
 
@@ -90,14 +90,14 @@ To get back to the seed password: delete `../api/data/workforce.db` and restart 
 |---|---|---|
 | `/` | everyone | Survey — pick a domain and answer competency items |
 | `/my-assessments` | everyone | History table of own assessments (Resume / View detail) |
-| `/reports` | staff (scoped) / admin | National → Region → Facility → Department → Individual drill-down |
+| `/reports` | staff (scoped) / admin | National → Region → District → Facility → Department → Individual drill-down |
 | `/reviews` | admin | Approve / reject completed submissions |
 | `/assessments` | admin | Domain + item CRUD + CSV import |
 | `/users` | admin | User CRUD + CSV import + temp password management |
-| `/setup` | admin | Regions, facilities, departments, org roles, titles |
+| `/setup` | admin | Regions, districts, facilities, departments, org roles, titles |
 | `/docs` | everyone | In-app documentation (Getting Started + per-page guides) |
 
-Drill-down report routes: `/reports/regions/:id`, `/reports/facilities/:id`, `/reports/departments/:id`, `/reports/users/:id`.
+Drill-down report routes: `/reports/regions/:id`, `/reports/districts/:id`, `/reports/facilities/:id`, `/reports/departments/:id`, `/reports/users/:id`.
 
 ---
 
@@ -134,7 +134,7 @@ web/
 ## Reports data flow
 
 1. User completes a survey on `/`. The SurveyJS JSON blob is POSTed to `/api/v1/survey/sessions/:id/complete`.
-2. Backend extracts one row per subcompetency into `user_assessment_responses`, snapshotting the user's current `region_id` / `facility_id` / `department_id` so later transfers don't rewrite history.
+2. Backend extracts one row per subcompetency into `user_assessment_responses`, snapshotting the user's current `region_id` / `district_id` / `facility_id` / `department_id` so later transfers don't rewrite history.
 3. Admin approves in `/reviews`. The session's `review_status` flips to `approved`.
 4. `/reports/*` endpoints aggregate from `user_assessment_responses` with the **approved-only** filter on by default. Toggle it off to include pending / rejected submissions in the totals.
 

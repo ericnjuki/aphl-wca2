@@ -1,4 +1,4 @@
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useRegionReport } from '@/hooks/reports/useReportQueries';
 import { MaturityLegend } from '../MaturityLegend';
 import { MaturityStackedBar } from '../MaturityStackedBar';
@@ -32,30 +32,48 @@ export function RegionReport({ regionId }: Props) {
         totalRespondents={data.meta.total_respondents}
         avgLevel={avgLevel}
         bucketsCovered={covered}
-        bucketsLabel="facilities"
+        bucketsLabel="districts"
       />
       <div className="rounded-sm border bg-background">
         <div className="flex items-center justify-between border-b px-3 py-2">
-          <h2 className="text-sm font-semibold">Facilities in {data.region.name}</h2>
+          <h2 className="text-sm font-semibold">Districts in {data.region.name}</h2>
           <MaturityLegend />
         </div>
         <div id="report-bar-chart" className="p-3">
           <MaturityStackedBar
-            data={data.items.map((r) => ({
-              key: String(r.facility_id),
-              label: r.facility_name,
-              ...r,
-            }))}
-            onBarClick={(key) => navigate(`${baseUrl}reports/facilities/${key}`)}
-            emptyText="No facilities in this region"
+            data={data.items.map((r) => ({ key: String(r.district_id), label: r.district_name, ...r }))}
+            onBarClick={(key) => navigate(`${baseUrl}reports/districts/${key}`)}
+            emptyText="No districts in this region"
           />
         </div>
       </div>
       <MaturityBreakdownTable
-        rows={data.items.map((r) => ({ key: String(r.facility_id), label: r.facility_name, ...r }))}
-        onRowClick={(key) => navigate(`${baseUrl}reports/facilities/${key}`)}
-        labelHeader="Facility"
+        rows={data.items.map((r) => ({ key: String(r.district_id), label: r.district_name, ...r }))}
+        onRowClick={(key) => navigate(`${baseUrl}reports/districts/${key}`)}
+        labelHeader="District"
       />
+      {data.undistricted_facilities.length > 0 && (
+        <div className="rounded-sm border bg-background">
+          <div className="border-b px-3 py-2">
+            <h2 className="text-sm font-semibold">Facilities without a district</h2>
+            <p className="text-xs text-muted-foreground">
+              Not yet counted in the district breakdown above. Assign a district in Setup › Facilities.
+            </p>
+          </div>
+          <ul className="flex flex-col divide-y">
+            {data.undistricted_facilities.map((f) => (
+              <li key={f.id}>
+                <Link
+                  to={`${baseUrl}reports/facilities/${f.id}`}
+                  className="block px-3 py-2 text-sm hover:bg-[rgba(70,130,180,0.08)]"
+                >
+                  {f.name}
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </div>
   );
 }
