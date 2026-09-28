@@ -1,5 +1,5 @@
 import express from 'express';
-import { getDb, execute } from '../src/db/database';
+import { getDb, execute, query } from '../src/db/database';
 import { runMigrations } from '../src/db/migrations';
 import adminRouter from '../src/routes/admin';
 import reportsRouter from '../src/routes/reports';
@@ -40,11 +40,15 @@ export const asUser = (id: number) => ({ 'x-test-user': String(id) });
 let seq = 0;
 
 export function createRegion(code: string, name: string): number {
-  return execute('INSERT INTO regions (code, name) VALUES (?, ?)', [code, name]).lastInsertRowid;
+  execute('INSERT INTO regions (code, name) VALUES (?, ?)', [code, name]);
+  const [row] = query<{ id: number }>('SELECT id FROM regions WHERE code = ? COLLATE NOCASE', [code]);
+  return row?.id ?? 0;
 }
 
 export function createDistrict(code: string, name: string, regionId: number): number {
-  return execute('INSERT INTO districts (code, name, region_id) VALUES (?, ?, ?)', [code, name, regionId]).lastInsertRowid;
+  execute('INSERT INTO districts (code, name, region_id) VALUES (?, ?, ?)', [code, name, regionId]);
+  const [row] = query<{ id: number }>('SELECT id FROM districts WHERE code = ? COLLATE NOCASE', [code]);
+  return row?.id ?? 0;
 }
 
 export function createFacility(
@@ -52,19 +56,24 @@ export function createFacility(
   name: string,
   opts: { regionId?: number | null; districtId?: number | null } = {},
 ): number {
-  return execute(
+  execute(
     'INSERT INTO facilities (code, name, region_id, district_id) VALUES (?, ?, ?, ?)',
     [code, name, opts.regionId ?? null, opts.districtId ?? null],
-  ).lastInsertRowid;
+  );
+  const [row] = query<{ id: number }>('SELECT id FROM facilities WHERE code = ? COLLATE NOCASE', [code]);
+  return row?.id ?? 0;
 }
 
 export function createUser(opts: { role?: 'admin' | 'staff'; facilityId?: number | null } = {}): number {
   seq++;
-  return execute(
+  const email = `u${seq}@example.test`;
+  execute(
     `INSERT INTO users (email, first_name, last_name, national_id, id_type, user_name, password, role, is_first_login, facility_id)
      VALUES (?, 'Test', ?, ?, 'NIN', ?, 'x', ?, 0, ?)`,
-    [`u${seq}@example.test`, `User${seq}`, `N${seq}`, `user${seq}`, opts.role ?? 'staff', opts.facilityId ?? null],
-  ).lastInsertRowid;
+    [email, `User${seq}`, `N${seq}`, `user${seq}`, opts.role ?? 'staff', opts.facilityId ?? null],
+  );
+  const [row] = query<{ id: number }>('SELECT id FROM users WHERE email = ?', [email]);
+  return row?.id ?? 0;
 }
 
 // One completed + approved session with a single response row.
@@ -75,16 +84,27 @@ export function addResponse(opts: {
   districtId?: number | null;
   level?: number;
 }): number {
-  const uaId = execute(
+  execute(
     `INSERT INTO user_assessments (user_id, domain_code, domain_name, status, review_status)
      VALUES (?, 'LAB', 'Lab', 'completed', 'approved')`,
     [opts.userId],
-  ).lastInsertRowid;
-  return execute(
+  );
+  const [ua] = query<{ id: number }>(
+    `SELECT id FROM user_assessments WHERE user_id = ? AND domain_code = 'LAB' AND status = 'completed' ORDER BY id DESC LIMIT 1`,
+    [opts.userId],
+  );
+  const uaId = ua?.id ?? 0;
+
+  execute(
     `INSERT INTO user_assessment_responses
        (user_assessment_id, user_id, domain_code, competency_value, subcompetency_value,
         response_level, facility_id, region_id, district_id)
      VALUES (?, ?, 'LAB', '1', '1.01', ?, ?, ?, ?)`,
     [uaId, opts.userId, opts.level ?? 2, opts.facilityId ?? null, opts.regionId ?? null, opts.districtId ?? null],
-  ).lastInsertRowid;
+  );
+  const [resp] = query<{ id: number }>(
+    `SELECT id FROM user_assessment_responses WHERE user_assessment_id = ? ORDER BY id DESC LIMIT 1`,
+    [uaId],
+  );
+  return resp?.id ?? 0;
 }
