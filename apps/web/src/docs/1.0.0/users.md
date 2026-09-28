@@ -12,7 +12,7 @@ Click **Add User** in the top-right. Required:
 
 Optional but highly recommended:
 
-- **Facility** — controls which region/facility their responses roll up into
+- **Facility** — controls which region/district/facility their responses roll up into
 - **Department** — same, for the department axis
 - **Org Role** and **Job Title** — for filterable reporting
 

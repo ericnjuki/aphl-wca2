@@ -1,6 +1,6 @@
 # LabWorkforce
 
-A competency-assessment tool for laboratory workforces. Staff complete self-assessments against domain-specific frameworks (e.g. *Bioinformatics*, *Administrative Controls*), an admin reviews submissions, and results roll up from individuals through departments, facilities, regions and national level — with charts, PDF / Excel / CSV export, and an in-app documentation browser.
+A competency-assessment tool for laboratory workforces. Staff complete self-assessments against domain-specific frameworks (e.g. *Bioinformatics*, *Administrative Controls*), an admin reviews submissions, and results roll up from individuals through departments, facilities, districts, regions and national level — with charts, PDF / Excel / CSV export, and an in-app documentation browser.
 
 ---
 
@@ -163,7 +163,7 @@ Current coverage: reports page boots without the Zustand-v5 infinite-loop bug, D
                                                        └──────────────────────┘
 ```
 
-Survey responses are captured at submission time as granular per-subcompetency rows (`user_assessment_responses`) with the user's facility / department / region snapshotted. Reports aggregate over those rows with an approved-only filter on by default; an admin approves via `/reviews`, and the response rows start counting toward the dashboards.
+Survey responses are captured at submission time as granular per-subcompetency rows (`user_assessment_responses`) with the user's facility / department / district / region snapshotted. Reports aggregate over those rows with an approved-only filter on by default; an admin approves via `/reviews`, and the response rows start counting toward the dashboards.
 
 Maturity scale: **1** Beginner · **2** Competent · **3** Proficient · **4** Expert (plus **0** N/A). Colours match across charts, legend, badges and exports.
 
