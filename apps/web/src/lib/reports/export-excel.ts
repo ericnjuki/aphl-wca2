@@ -2,25 +2,13 @@
 // Scope is intentionally narrow — 3 sheets max: Summary, Breakdown, Meta.
 
 import * as XLSX from 'xlsx';
-import type {
-  NationalReportResponse,
-  RegionReportResponse,
-  FacilityReportResponse,
-  DepartmentReportResponse,
-  IndividualReportResponse,
-} from '@/types/reports';
-
-type AnyReport =
-  | NationalReportResponse
-  | RegionReportResponse
-  | FacilityReportResponse
-  | DepartmentReportResponse
-  | IndividualReportResponse;
+import type { AnyReport } from '@/types/reports';
 
 function titleFor(r: AnyReport): string {
   switch (r.level) {
     case 'national':   return 'National report';
     case 'region':     return `${r.region.name} region`;
+    case 'district':   return `${r.district.name} district`;
     case 'facility':   return r.facility.name;
     case 'department': return r.department.name;
     case 'individual': return `${r.user.first_name} ${r.user.last_name}`;
@@ -39,6 +27,15 @@ function breakdownRows(r: AnyReport): Record<string, unknown>[] {
         'N/A': i.count_na,
       }));
     case 'region':
+      return r.items.map((i) => ({
+        District: i.district_name,
+        Respondents: i.respondents,
+        'Avg level': i.avg_level ?? '',
+        Beginner: i.count_beginner, Competent: i.count_competent,
+        Proficient: i.count_proficient, Expert: i.count_expert,
+        'N/A': i.count_na,
+      }));
+    case 'district':
       return r.items.map((i) => ({
         Facility: i.facility_name,
         Respondents: i.respondents,
