@@ -2,7 +2,7 @@
 // under /admin/districts (auth + password-change guards are applied there).
 
 import { Router, Request, Response, NextFunction } from 'express';
-import { query, execute } from '../db/database';
+import { query, execute, transaction } from '../db/database';
 import { requireAdmin } from '../middleware/auth';
 import { createError } from '../middleware/errorHandler';
 import { parseCsv } from '../lib/csv';
@@ -68,16 +68,18 @@ router.put('/:id', requireAdmin, (req: Request, res: Response, next: NextFunctio
     const regionId = regionExists(body.region_id ?? existing.region_id);
     if (regionId === null) return next(createError('region_id must reference an existing region', 400));
     try {
-      execute(
-        `UPDATE districts SET code = ?, name = ?, region_id = ?, updated_at = datetime('now') WHERE id = ?`,
-        [code, name, regionId, id],
-      );
+      transaction(() => {
+        execute(
+          `UPDATE districts SET code = ?, name = ?, region_id = ?, updated_at = datetime('now') WHERE id = ?`,
+          [code, name, regionId, id],
+        );
+        if (regionId !== existing.region_id) syncFacilitiesRegion(id, regionId);
+      });
     } catch (e: unknown) {
       if (e instanceof Error && e.message.includes('UNIQUE'))
         return next(createError(`District code "${code}" already exists`, 409));
       throw e;
     }
-    if (regionId !== existing.region_id) syncFacilitiesRegion(id, regionId);
     const [district] = query<DistrictRow>('SELECT * FROM districts WHERE id = ?', [id]);
     res.json({ district });
   } catch (err) { next(err); }
@@ -107,23 +109,29 @@ router.post('/import', requireAdmin, (req: Request, res: Response, next: NextFun
 
     let imported = 0;
     const errors: { row: number; reason: string }[] = [];
-    rows.forEach((row, i) => {
-      const line = i + 2; // header is line 1
-      const code = row[ci('district_code')]?.toUpperCase();
-      const name = row[ci('district_name')];
-      const regionCode = row[ci('region_code')];
-      if (!code || !name || !regionCode) {
-        errors.push({ row: line, reason: 'district_code, district_name and region_code are required' });
-        return;
-      }
-      const [region] = query<{ id: number }>('SELECT id FROM regions WHERE code = ? COLLATE NOCASE', [regionCode]);
-      if (!region) { errors.push({ row: line, reason: `Unknown region_code "${regionCode}"` }); return; }
-      try {
-        execute('INSERT INTO districts (code, name, region_id) VALUES (?, ?, ?)', [code, name, region.id]);
-        imported++;
-      } catch {
-        errors.push({ row: line, reason: `District code "${code}" already exists` });
-      }
+    transaction(() => {
+      rows.forEach((row, i) => {
+        const line = i + 2; // header is line 1
+        const code = row[ci('district_code')]?.toUpperCase();
+        const name = row[ci('district_name')];
+        const regionCode = row[ci('region_code')];
+        if (!code || !name || !regionCode) {
+          errors.push({ row: line, reason: 'district_code, district_name and region_code are required' });
+          return;
+        }
+        const [region] = query<{ id: number }>('SELECT id FROM regions WHERE code = ? COLLATE NOCASE', [regionCode]);
+        if (!region) { errors.push({ row: line, reason: `Unknown region_code "${regionCode}"` }); return; }
+        try {
+          execute('INSERT INTO districts (code, name, region_id) VALUES (?, ?, ?)', [code, name, region.id]);
+          imported++;
+        } catch (e: unknown) {
+          if (e instanceof Error && e.message.includes('UNIQUE')) {
+            errors.push({ row: line, reason: `District code "${code}" already exists` });
+          } else {
+            throw e;
+          }
+        }
+      });
     });
     res.json({ imported, skipped: errors.length, errors });
   } catch (err) { next(err); }
