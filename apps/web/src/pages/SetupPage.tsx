@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plus, Pencil, Trash2, FileUp, Search } from "lucide-react";
 import { toast } from "sonner";
@@ -26,13 +26,6 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import {
   Table,
   TableBody,
   TableCell,
@@ -47,79 +40,23 @@ import {
   SelectContent,
   SelectGroup,
   SelectItem,
+  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { api } from "@/lib/api";
+import { ImportDialog } from "@/components/setup/ImportDialog";
+import { DistrictsTab } from "@/components/setup/DistrictsTab";
+import { groupDistrictsByRegion, type District } from "@/lib/setup/districts";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-interface Region     { id: number; code: string; name: string; }
 interface Department { id: number; code: string; name: string; }
 interface OrgRole    { id: number; code: string; name: string; }
 interface UserTitle  { id: number; code: string; name: string; }
-interface Facility   { id: number; code: string; name: string; facility_type: string | null; region_id: number | null; region_name: string | null; department_ids: number[]; }
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-function readFileAsText(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = (e) => resolve(e.target?.result as string);
-    reader.onerror = () => reject(new Error("Failed to read file"));
-    reader.readAsText(file);
-  });
-}
-
-// ── Generic CSV import dialog ─────────────────────────────────────────────────
-
-interface ImportDialogProps {
-  open: boolean;
-  onClose: () => void;
-  endpoint: string;
-  hint: string;
-  onImported: () => void;
-}
-
-function ImportDialog({ open, onClose, endpoint, hint, onImported }: ImportDialogProps) {
-  const fileRef = useRef<HTMLInputElement>(null);
-  const [loading, setLoading] = useState(false);
-
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    const file = fileRef.current?.files?.[0];
-    if (!file) { toast.error("Select a CSV file first."); return; }
-    setLoading(true);
-    const csv = await readFileAsText(file);
-    const res = await api.post<{ imported: number; skipped?: number }>(endpoint, { csv });
-    setLoading(false);
-    if (res.error !== null) { toast.error(res.error); return; }
-    const msg = res.data.skipped !== undefined
-      ? `Imported ${res.data.imported}, skipped ${res.data.skipped}.`
-      : `Imported ${res.data.imported}.`;
-    toast.success(msg);
-    onImported();
-    onClose();
-  }
-
-  return (
-    <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader><DialogTitle>Import from CSV</DialogTitle></DialogHeader>
-        <form onSubmit={handleSubmit} className="flex flex-col gap-4 py-2">
-          <p className="text-sm text-muted-foreground">{hint}</p>
-          <Input ref={fileRef} type="file" accept=".csv" required />
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
-            <Button type="submit" disabled={loading}>{loading ? "Importing…" : "Import"}</Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
-  );
-}
+interface Facility   { id: number; code: string; name: string; facility_type: string | null; region_id: number | null; region_name: string | null; district_id: number | null; district_name: string | null; department_ids: number[]; }
 
 // ── Generic code/name Sheet ───────────────────────────────────────────────────
 
@@ -376,7 +313,7 @@ function FacilitiesTab() {
   const [code, setCode] = useState("");
   const [name, setName] = useState("");
   const [facilityType, setFacilityType] = useState("");
-  const [regionId, setRegionId] = useState<string>("");
+  const [districtId, setDistrictId] = useState<string>("");
   const [selectedDepts, setSelectedDepts] = useState<number[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -389,14 +326,15 @@ function FacilitiesTab() {
     },
   });
 
-  const { data: regions = [] } = useQuery({
-    queryKey: ["admin", "regions"],
+  const { data: districts = [] } = useQuery({
+    queryKey: ["admin", "districts"],
     queryFn: async () => {
-      const res = await api.get<{ regions: Region[] }>("/admin/regions");
+      const res = await api.get<{ districts: District[] }>("/admin/districts");
       if (res.error !== null) throw new Error(res.error);
-      return res.data.regions;
+      return res.data.districts;
     },
   });
+  const districtGroups = useMemo(() => groupDistrictsByRegion(districts), [districts]);
 
   const { data: departments = [] } = useQuery({
     queryKey: ["admin", "departments"],
@@ -407,7 +345,10 @@ function FacilitiesTab() {
     },
   });
 
-  const invalidate = () => qc.invalidateQueries({ queryKey: ["admin", "facilities"] });
+  const invalidate = () => {
+    qc.invalidateQueries({ queryKey: ["admin", "facilities"] });
+    qc.invalidateQueries({ queryKey: ["admin", "districts"] });
+  };
 
   const [searchInput, setSearchInput] = useState("");
   const [page, setPage] = useState(0);
@@ -419,6 +360,7 @@ function FacilitiesTab() {
       f.code.toLowerCase().includes(q) ||
       f.name.toLowerCase().includes(q) ||
       (f.facility_type ?? "").toLowerCase().includes(q) ||
+      (f.district_name ?? "").toLowerCase().includes(q) ||
       (f.region_name ?? "").toLowerCase().includes(q),
     );
   }, [facilities, searchInput]);
@@ -433,19 +375,20 @@ function FacilitiesTab() {
     setCode(facility?.code ?? "");
     setName(facility?.name ?? "");
     setFacilityType(facility?.facility_type ?? "");
-    setRegionId(facility?.region_id ? String(facility.region_id) : "");
+    setDistrictId(facility?.district_id ? String(facility.district_id) : "");
     setSelectedDepts(facility?.department_ids ?? []);
     setSheetOpen(true);
   }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (!districtId) { toast.error("Select a district."); return; }
     setLoading(true);
     const body = {
       code: code.trim().toUpperCase(),
       name: name.trim(),
       facility_type: facilityType.trim() || null,
-      region_id: regionId ? Number(regionId) : null,
+      district_id: Number(districtId),
       department_ids: selectedDepts,
     };
     const res = editing
@@ -470,7 +413,7 @@ function FacilitiesTab() {
           <Input
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
-            placeholder="Search code, name, type, region…"
+            placeholder="Search code, name, type, district, region…"
             className="h-8 pl-7 text-sm"
           />
         </div>
@@ -490,6 +433,7 @@ function FacilitiesTab() {
               <TableHead className="w-24 text-xs uppercase tracking-wide">Code</TableHead>
               <TableHead className="text-xs uppercase tracking-wide">Name</TableHead>
               <TableHead className="text-xs uppercase tracking-wide">Type</TableHead>
+              <TableHead className="text-xs uppercase tracking-wide">District</TableHead>
               <TableHead className="text-xs uppercase tracking-wide">Region</TableHead>
               <TableHead className="w-20 text-xs uppercase tracking-wide">Depts</TableHead>
               <TableHead className="w-20 text-right text-xs uppercase tracking-wide">Actions</TableHead>
@@ -498,7 +442,7 @@ function FacilitiesTab() {
           <TableBody>
             {filteredFacilities.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={6} className="py-8 text-center text-muted-foreground">
+                <TableCell colSpan={7} className="py-8 text-center text-muted-foreground">
                   {facilities.length === 0 ? "No facilities yet." : "No facilities match your search."}
                 </TableCell>
               </TableRow>
@@ -511,6 +455,7 @@ function FacilitiesTab() {
                 <TableCell className="font-mono text-xs text-muted-foreground">{f.code}</TableCell>
                 <TableCell className="text-sm">{f.name}</TableCell>
                 <TableCell className="text-xs text-muted-foreground">{f.facility_type ?? "—"}</TableCell>
+                <TableCell className="text-xs text-muted-foreground">{f.district_name ?? "—"}</TableCell>
                 <TableCell className="text-xs text-muted-foreground">{f.region_name ?? "—"}</TableCell>
                 <TableCell className="font-mono text-xs">{f.department_ids.length}</TableCell>
                 <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
@@ -525,7 +470,7 @@ function FacilitiesTab() {
                 </TableCell>
               </TableRow>
             ))}
-            <TableFillerRow colSpan={6} show={pagedFacilities.length > 0} />
+            <TableFillerRow colSpan={7} show={pagedFacilities.length > 0} />
           </TableBody>
         </Table>
       </div>
@@ -562,20 +507,27 @@ function FacilitiesTab() {
                 <Label className="text-right text-sm">Type</Label>
                 <Input value={facilityType} onChange={(e) => setFacilityType(e.target.value)} placeholder="e.g. Hospital" />
 
-                <Label className="text-right text-sm">Region</Label>
-                <Select value={regionId || "__none__"} onValueChange={(v) => setRegionId(v === "__none__" ? "" : v)}>
+                <Label className="text-right text-sm">District</Label>
+                <Select value={districtId} onValueChange={setDistrictId}>
                   <SelectTrigger className="text-sm">
-                    <SelectValue placeholder="Select region…" />
+                    <SelectValue placeholder="Select district…" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectGroup>
-                      <SelectItem value="__none__">— None —</SelectItem>
-                      {regions.map((r) => (
-                        <SelectItem key={r.id} value={String(r.id)} description={r.code}>{r.name}</SelectItem>
-                      ))}
-                    </SelectGroup>
+                    {districtGroups.map((g) => (
+                      <SelectGroup key={g.region}>
+                        <SelectLabel>{g.region}</SelectLabel>
+                        {g.districts.map((d) => (
+                          <SelectItem key={d.id} value={String(d.id)} description={d.code}>{d.name}</SelectItem>
+                        ))}
+                      </SelectGroup>
+                    ))}
                   </SelectContent>
                 </Select>
+
+                <Label className="text-right text-sm text-muted-foreground">Region</Label>
+                <span className="text-sm text-muted-foreground">
+                  {districts.find((d) => String(d.id) === districtId)?.region_name ?? "Set by district"}
+                </span>
               </div>
 
               <div className="flex flex-col gap-2">
@@ -615,7 +567,7 @@ function FacilitiesTab() {
         open={importOpen}
         onClose={() => setImportOpen(false)}
         endpoint="/admin/facilities/import"
-        hint="Required columns: facility_code, facility_name. Optional: facility_type, region_code."
+        hint="Required columns: facility_code, facility_name, district_code. Optional: facility_type, region_code (must match the district). Existing codes get their district updated."
         onImported={invalidate}
       />
 
@@ -682,7 +634,7 @@ export default function SetupPage() {
         <Tabs defaultValue="regions" className="flex flex-col flex-1 overflow-hidden">
           <div className="border-b px-4">
             <TabsList className="h-10 bg-transparent p-0 gap-2">
-              {["regions", "facilities", "departments", "roles", "titles"].map((tab) => (
+              {["regions", "districts", "facilities", "departments", "roles", "titles"].map((tab) => (
                 <TabsTrigger
                   key={tab}
                   value={tab}
@@ -706,6 +658,10 @@ export default function SetupPage() {
                 importHint="Required columns: region_code, region_name."
                 sheetTitle={(e) => e ? "Edit Region" : "New Region"}
               />
+            </TabsContent>
+
+            <TabsContent value="districts" className="h-full mt-0">
+              <DistrictsTab />
             </TabsContent>
 
             <TabsContent value="facilities" className="h-full mt-0">
