@@ -4,6 +4,7 @@ import { useReportsFiltersStore } from '@/store/reports-filters';
 import type {
   NationalReportResponse,
   RegionReportResponse,
+  DistrictReportResponse,
   FacilityReportResponse,
   DepartmentReportResponse,
   IndividualReportResponse,
@@ -56,6 +57,20 @@ export function useRegionReport(regionId: number | null) {
     enabled: regionId != null,
     queryFn: async () => {
       const res = await api.get<RegionReportResponse>(`/reports/regions/${regionId}${qs(filters)}`);
+      if (res.error !== null) throw new Error(res.error);
+      return res.data;
+    },
+    staleTime: FIVE_MINUTES,
+  });
+}
+
+export function useDistrictReport(districtId: number | null) {
+  const filters = useFilters();
+  return useQuery({
+    queryKey: ['reports', 'district', districtId, filters],
+    enabled: districtId != null,
+    queryFn: async () => {
+      const res = await api.get<DistrictReportResponse>(`/reports/districts/${districtId}${qs(filters)}`);
       if (res.error !== null) throw new Error(res.error);
       return res.data;
     },

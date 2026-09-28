@@ -40,6 +40,7 @@ const router = createBrowserRouter([
       { path: baseUrl, element: <SurveyPage />, errorElement: <ErrorPage /> },
       { path: `${baseUrl}reports`, element: <ReportsPage />, errorElement: <ErrorPage /> },
       { path: `${baseUrl}reports/regions/:regionId`,         element: <ReportsPage />, errorElement: <ErrorPage /> },
+      { path: `${baseUrl}reports/districts/:districtId`,     element: <ReportsPage />, errorElement: <ErrorPage /> },
       { path: `${baseUrl}reports/facilities/:facilityId`,    element: <ReportsPage />, errorElement: <ErrorPage /> },
       { path: `${baseUrl}reports/departments/:departmentId`, element: <ReportsPage />, errorElement: <ErrorPage /> },
       { path: `${baseUrl}reports/users/:userId`,             element: <ReportsPage />, errorElement: <ErrorPage /> },
