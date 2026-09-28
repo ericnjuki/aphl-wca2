@@ -64,6 +64,7 @@ router.put('/:id', requireAdmin, (req: Request, res: Response, next: NextFunctio
     const body = req.body as { code?: string; name?: string; region_id?: unknown };
     const code = (body.code ?? existing.code).toUpperCase();
     const name = body.name ?? existing.name;
+    if (!code || !name) return next(createError('code and name are required', 400));
     const regionId = regionExists(body.region_id ?? existing.region_id);
     if (regionId === null) return next(createError('region_id must reference an existing region', 400));
     try {

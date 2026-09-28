@@ -65,6 +65,13 @@ describe('/admin/districts', () => {
     expect(query<{ region_id: number }>('SELECT region_id FROM facilities WHERE id = ?', [f])[0].region_id).toBe(mwz);
   });
 
+  it('rejects updating a district with an empty name', async () => {
+    const d = createDistrict('TMK', 'Temeke', dsm);
+    const res = await request(app).put(`/admin/districts/${d}`).set(asUser(admin)).send({ name: '' });
+    expect(res.status).toBe(400);
+    expect(query<{ name: string }>('SELECT name FROM districts WHERE id = ?', [d])[0].name).toBe('Temeke');
+  });
+
   it('refuses to delete a district that still has facilities (invariant 3)', async () => {
     const d = createDistrict('TMK', 'Temeke', dsm);
     createFacility('F1', 'Fac', { regionId: dsm, districtId: d });
