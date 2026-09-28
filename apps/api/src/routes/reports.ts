@@ -83,7 +83,7 @@ function respondentCounts(
   whereSql: string,
   whereParams: SqlValue[],
   f: CommonFilters,
-  unassignedCol: 'region_id' | 'facility_id' | 'department_id',
+  unassignedCol: 'region_id' | 'district_id' | 'facility_id' | 'department_id',
 ): { total: number; unassigned: number } {
   const [row] = query<{ total: number; unassigned: number }>(
     `SELECT
@@ -146,25 +146,73 @@ router.get('/regions/:regionId', (req: Request, res: Response, next: NextFunctio
     const on = uarOnFilters(f);
 
     const items = query(
-      `SELECT f.id AS facility_id, f.name AS facility_name, ${COUNTS_SELECT}
-       FROM facilities f
+      `SELECT d.id AS district_id, d.name AS district_name, ${COUNTS_SELECT}
+       FROM districts d
        LEFT JOIN user_assessment_responses uar
-              ON uar.facility_id = f.id${on.sql}
+              ON uar.district_id = d.id${on.sql}
        LEFT JOIN user_assessments ua ON ua.id = uar.user_assessment_id${uaOnFilter(f)}
-       WHERE f.region_id = ?
-       GROUP BY f.id, f.name
-       ORDER BY f.name`,
+       WHERE d.region_id = ?
+       GROUP BY d.id, d.name
+       ORDER BY d.name`,
       [...on.params, regionId],
+    );
+
+    // Facilities not yet placed in a district — surfaced so they stay reachable.
+    const undistricted_facilities = query<{ id: number; name: string }>(
+      'SELECT id, name FROM facilities WHERE region_id = ? AND district_id IS NULL ORDER BY name',
+      [regionId],
     );
 
     const whereParts: string[] = ['uar.region_id = ?'];
     const whereParams: SqlValue[] = [regionId];
     if (f.domainCode)      { whereParts.push('uar.domain_code = ?');      whereParams.push(f.domainCode); }
     if (f.competencyValue) { whereParts.push('uar.competency_value = ?'); whereParams.push(f.competencyValue); }
-    // At region level, unassigned = respondents in this region with no facility_id.
+    // At region level, unassigned = respondents in this region with no district_id.
+    const counts = respondentCounts('WHERE ' + whereParts.join(' AND '), whereParams, f, 'district_id');
+
+    res.json({ level: 'region', region, items, undistricted_facilities, meta: meta(f, counts.total, counts.unassigned) });
+  } catch (err) { next(err); }
+});
+
+// ── GET /reports/districts/:districtId ─────────────────────────────────────
+router.get('/districts/:districtId', (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const districtId = Number(req.params.districtId);
+    const scope = getScope(req.session.userId!);
+    const reason = denyReason(scope, { level: 'district', districtId });
+    if (reason) return next(createError(reason, 403));
+
+    const [district] = query<{ id: number; name: string; region_id: number; region_name: string | null }>(
+      `SELECT d.id, d.name, d.region_id, r.name AS region_name
+       FROM districts d LEFT JOIN regions r ON r.id = d.region_id
+       WHERE d.id = ?`,
+      [districtId],
+    );
+    if (!district) return next(createError('District not found', 404));
+
+    const f = parseFilters(req);
+    const on = uarOnFilters(f);
+
+    const items = query(
+      `SELECT fa.id AS facility_id, fa.name AS facility_name, ${COUNTS_SELECT}
+       FROM facilities fa
+       LEFT JOIN user_assessment_responses uar
+              ON uar.facility_id = fa.id${on.sql}
+       LEFT JOIN user_assessments ua ON ua.id = uar.user_assessment_id${uaOnFilter(f)}
+       WHERE fa.district_id = ?
+       GROUP BY fa.id, fa.name
+       ORDER BY fa.name`,
+      [...on.params, districtId],
+    );
+
+    const whereParts: string[] = ['uar.district_id = ?'];
+    const whereParams: SqlValue[] = [districtId];
+    if (f.domainCode)      { whereParts.push('uar.domain_code = ?');      whereParams.push(f.domainCode); }
+    if (f.competencyValue) { whereParts.push('uar.competency_value = ?'); whereParams.push(f.competencyValue); }
+    // At district level, unassigned = respondents in this district with no facility_id.
     const counts = respondentCounts('WHERE ' + whereParts.join(' AND '), whereParams, f, 'facility_id');
 
-    res.json({ level: 'region', region, items, meta: meta(f, counts.total, counts.unassigned) });
+    res.json({ level: 'district', district, items, meta: meta(f, counts.total, counts.unassigned) });
   } catch (err) { next(err); }
 });
 
@@ -176,8 +224,16 @@ router.get('/facilities/:facilityId', (req: Request, res: Response, next: NextFu
     const reason = denyReason(scope, { level: 'facility', facilityId });
     if (reason) return next(createError(reason, 403));
 
-    const [facility] = query<{ id: number; name: string; region_id: number | null }>(
-      'SELECT id, name, region_id FROM facilities WHERE id = ?', [facilityId],
+    const [facility] = query<{
+      id: number; name: string; region_id: number | null; region_name: string | null;
+      district_id: number | null; district_name: string | null;
+    }>(
+      `SELECT fa.id, fa.name, fa.region_id, r.name AS region_name, fa.district_id, d.name AS district_name
+       FROM facilities fa
+       LEFT JOIN regions r   ON r.id = fa.region_id
+       LEFT JOIN districts d ON d.id = fa.district_id
+       WHERE fa.id = ?`,
+      [facilityId],
     );
     if (!facility) return next(createError('Facility not found', 404));
 
