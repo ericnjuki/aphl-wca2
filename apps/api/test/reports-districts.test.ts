@@ -68,4 +68,36 @@ describe('district reports', () => {
     expect((await request(app).get(`/reports/districts/${tmk}`).set(asUser(staff))).status).toBe(200);
     expect((await request(app).get(`/reports/districts/${ila}`).set(asUser(staff))).status).toBe(403);
   });
+
+  it('keeps region counts consistent for a response whose snapshotted region disagrees with its district', async () => {
+    // A response snapshotted with region DSM but district Nyamagana, which is in region MWZ —
+    // e.g. a legacy NULL-region facility later given a district in another region, or a
+    // district that moved region after the response was recorded.
+    const mwz = createRegion('MWZ', 'Mwanza');
+    const nya = createDistrict('NYA', 'Nyamagana', mwz);
+    const cross = createUser({ facilityId: fTmk });
+    addResponse({ userId: cross, facilityId: fTmk, regionId: dsm, districtId: nya, level: 3 });
+
+    // Region A (DSM): counted in total and as unassigned; no district bar includes it.
+    const resDsm = await request(app).get(`/reports/regions/${dsm}`).set(asUser(admin));
+    expect(resDsm.status).toBe(200);
+    expect(resDsm.body.meta.total_respondents).toBe(4);
+    expect(resDsm.body.meta.unassigned_respondents).toBe(2);
+    const tmkBar = resDsm.body.items.find((i: { district_name: string }) => i.district_name === 'Temeke');
+    const ilaBar = resDsm.body.items.find((i: { district_name: string }) => i.district_name === 'Ilala');
+    expect(tmkBar.respondents).toBe(2);
+    expect(ilaBar.respondents).toBe(0);
+    const sumDsm = resDsm.body.items.reduce((s: number, i: { respondents: number }) => s + i.respondents, 0);
+    expect(sumDsm + resDsm.body.meta.unassigned_respondents).toBe(resDsm.body.meta.total_respondents);
+
+    // Region B (MWZ): Nyamagana's bar excludes it, and MWZ's total excludes it too.
+    const resMwz = await request(app).get(`/reports/regions/${mwz}`).set(asUser(admin));
+    expect(resMwz.status).toBe(200);
+    expect(resMwz.body.meta.total_respondents).toBe(0);
+    expect(resMwz.body.meta.unassigned_respondents).toBe(0);
+    const nyaBar = resMwz.body.items.find((i: { district_name: string }) => i.district_name === 'Nyamagana');
+    expect(nyaBar.respondents).toBe(0);
+    const sumMwz = resMwz.body.items.reduce((s: number, i: { respondents: number }) => s + i.respondents, 0);
+    expect(sumMwz + resMwz.body.meta.unassigned_respondents).toBe(resMwz.body.meta.total_respondents);
+  });
 });

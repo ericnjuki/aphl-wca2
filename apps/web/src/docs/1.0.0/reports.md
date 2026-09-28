@@ -43,7 +43,7 @@ Each stacked bar shows how many respondents landed in each level:
 
 If you see a yellow banner *"N respondents are not attributed to a region"*, it means those users completed assessments without a facility assignment, so their data doesn't flow into any regional bucket. Fix by editing their row on **Users** and setting a **Facility**. Note that existing unattributed rows stay unattributed — we snapshot org context at submission time so historical reports don't rewrite when someone transfers.
 
-On a **Region** report, the banner counts respondents whose facility has no district yet. Those facilities are listed under **Facilities without a district** so you can still open them. Assigning a district (Setup › Facilities, or a facilities CSV import) also attributes that facility's earlier responses to the district.
+On a **Region** report, the banner counts respondents whose facility has no district yet. Those facilities are listed under **Facilities without a district** so you can still open them. Assigning a district (Setup › Facilities, or a facilities CSV import) also attributes that facility's earlier responses to the district. Responses submitted before a facility or district moved region keep their original region, so they show as unassigned there rather than under the district.
 
 ## Export
 

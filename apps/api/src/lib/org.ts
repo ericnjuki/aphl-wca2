@@ -47,12 +47,16 @@ export function syncFacilitiesRegion(districtId: number, regionId: number): void
 
 /**
  * Attribute a facility's pre-district responses to its (new) district.
- * Only NULLs are filled — an existing snapshot is history and never rewritten.
+ * Only NULLs are filled — an existing snapshot is history and never rewritten,
+ * including a `region_id` the row already has (even if it disagrees with the
+ * district's own region — that mismatch is what makes it a legacy snapshot).
  */
 export function backfillResponseDistrict(facilityId: number, districtId: number): void {
+  const [district] = query<{ region_id: number }>('SELECT region_id FROM districts WHERE id = ?', [districtId]);
   execute(
-    `UPDATE user_assessment_responses SET district_id = ?
+    `UPDATE user_assessment_responses
+     SET district_id = ?, region_id = COALESCE(region_id, ?)
      WHERE facility_id = ? AND district_id IS NULL`,
-    [districtId, facilityId],
+    [districtId, district?.region_id ?? null, facilityId],
   );
 }

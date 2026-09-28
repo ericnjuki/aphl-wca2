@@ -79,20 +79,25 @@ function meta(f: CommonFilters, totalRespondents: number, unassigned: number) {
 // subset whose `unassignedCol` is NULL — used to surface an "unassigned"
 // warning on the UI when a user completed a survey but has no facility /
 // department / region, so their data wouldn't show in any bucket.
+// `unassigned` is either a column that must be NULL, or a custom predicate
+// (SQL + its own params) — used at region level, where "unassigned" also
+// covers a district that no longer belongs to this region (see below).
 function respondentCounts(
   whereSql: string,
   whereParams: SqlValue[],
   f: CommonFilters,
-  unassignedCol: 'region_id' | 'district_id' | 'facility_id' | 'department_id',
+  unassigned: 'region_id' | 'district_id' | 'facility_id' | 'department_id' | { sql: string; params: SqlValue[] },
 ): { total: number; unassigned: number } {
+  const unassignedSql = typeof unassigned === 'string' ? `uar.${unassigned} IS NULL` : unassigned.sql;
+  const unassignedParams = typeof unassigned === 'string' ? [] : unassigned.params;
   const [row] = query<{ total: number; unassigned: number }>(
     `SELECT
-       COUNT(DISTINCT uar.user_id)                                                   AS total,
-       COUNT(DISTINCT CASE WHEN uar.${unassignedCol} IS NULL THEN uar.user_id END)   AS unassigned
+       COUNT(DISTINCT uar.user_id)                                       AS total,
+       COUNT(DISTINCT CASE WHEN ${unassignedSql} THEN uar.user_id END)   AS unassigned
      FROM user_assessment_responses uar
      LEFT JOIN user_assessments ua ON ua.id = uar.user_assessment_id${uaOnFilter(f)}
      ${whereSql}`,
-    whereParams,
+    [...unassignedParams, ...whereParams],
   );
   return { total: row?.total ?? 0, unassigned: row?.unassigned ?? 0 };
 }
@@ -149,7 +154,7 @@ router.get('/regions/:regionId', (req: Request, res: Response, next: NextFunctio
       `SELECT d.id AS district_id, d.name AS district_name, ${COUNTS_SELECT}
        FROM districts d
        LEFT JOIN user_assessment_responses uar
-              ON uar.district_id = d.id${on.sql}
+              ON uar.district_id = d.id AND uar.region_id = d.region_id${on.sql}
        LEFT JOIN user_assessments ua ON ua.id = uar.user_assessment_id${uaOnFilter(f)}
        WHERE d.region_id = ?
        GROUP BY d.id, d.name
@@ -167,8 +172,14 @@ router.get('/regions/:regionId', (req: Request, res: Response, next: NextFunctio
     const whereParams: SqlValue[] = [regionId];
     if (f.domainCode)      { whereParts.push('uar.domain_code = ?');      whereParams.push(f.domainCode); }
     if (f.competencyValue) { whereParts.push('uar.competency_value = ?'); whereParams.push(f.competencyValue); }
-    // At region level, unassigned = respondents in this region with no district_id.
-    const counts = respondentCounts('WHERE ' + whereParts.join(' AND '), whereParams, f, 'district_id');
+    // At region level, unassigned = respondents in this region with no district_id,
+    // OR whose district_id points at a district that isn't (or no longer is) in this
+    // region — a snapshot left behind by a re-districted facility or a moved district.
+    // Without this, such a respondent would vanish from both the bars and the total.
+    const counts = respondentCounts('WHERE ' + whereParts.join(' AND '), whereParams, f, {
+      sql: 'uar.district_id IS NULL OR uar.district_id NOT IN (SELECT id FROM districts WHERE region_id = ?)',
+      params: [regionId],
+    });
 
     res.json({ level: 'region', region, items, undistricted_facilities, meta: meta(f, counts.total, counts.unassigned) });
   } catch (err) { next(err); }

@@ -61,4 +61,26 @@ describe('lib/org', () => {
     expect(byId[kept]).toBe(dOld);
     expect(byId[elsewhere]).toBeNull();
   });
+
+  it('backfillResponseDistrict also fills a missing region_id, but leaves an existing one untouched', () => {
+    const r1 = createRegion('R1', 'One');
+    const r2 = createRegion('R2', 'Two');
+    const d = createDistrict('D1', 'Dist', r1);
+    const f = createFacility('F1', 'Fac', { regionId: r1 });
+    const u = createUser({ facilityId: f });
+    // No region, no district — should pick up the district's region.
+    const noRegion = addResponse({ userId: u, facilityId: f });
+    // Already has a (different) region — must not be overwritten by the district's region.
+    const otherRegion = addResponse({ userId: u, facilityId: f, regionId: r2 });
+
+    backfillResponseDistrict(f, d);
+
+    const byId = Object.fromEntries(
+      query<{ id: number; region_id: number | null; district_id: number | null }>(
+        'SELECT id, region_id, district_id FROM user_assessment_responses',
+      ).map((x) => [x.id, x]),
+    );
+    expect(byId[noRegion]).toMatchObject({ region_id: r1, district_id: d });
+    expect(byId[otherRegion]).toMatchObject({ region_id: r2, district_id: d });
+  });
 });
