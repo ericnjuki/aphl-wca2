@@ -5,6 +5,7 @@ import { SqlValue } from 'sql.js';
 import { query, execute, transaction } from '../db/database';
 import { requireAuth, requirePasswordChanged, requireAdmin } from '../middleware/auth';
 import { createError } from '../middleware/errorHandler';
+import districtsRouter from './admin-districts';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -55,11 +56,12 @@ interface CrudConfig {
   table: string;
   fields: string[];          // updatable fields (code always included)
   uniqueConflictField?: string; // field name to show in 409 message
+  beforeDelete?: (id: number) => string | null; // non-null → 409 with that message
 }
 
 function makeCrudRouter(cfg: CrudConfig) {
   const r = Router();
-  const { table, fields } = cfg;
+  const { table, fields, beforeDelete } = cfg;
   const allFields = [...new Set(['code', 'name', ...fields])];
 
   // LIST
@@ -121,6 +123,8 @@ function makeCrudRouter(cfg: CrudConfig) {
       const id = Number(req.params.id);
       const [existing] = query(`SELECT id FROM ${table} WHERE id = ?`, [id]);
       if (!existing) return next(createError('Not found', 404));
+      const blocked = beforeDelete?.(id);
+      if (blocked) return next(createError(blocked, 409));
       execute(`DELETE FROM ${table} WHERE id = ?`, [id]);
       res.json({ message: 'Deleted' });
     } catch (err) { next(err); }
@@ -131,7 +135,15 @@ function makeCrudRouter(cfg: CrudConfig) {
 
 // ── Regions ───────────────────────────────────────────────────────────────────
 
-const regionsRouter = makeCrudRouter({ table: 'regions', fields: ['code', 'name'] });
+const regionsRouter = makeCrudRouter({
+  table: 'regions',
+  fields: ['code', 'name'],
+  // Invariant 4 — FKs aren't enforced, so check here.
+  beforeDelete: (id) => {
+    const [{ n }] = query<{ n: number }>('SELECT COUNT(*) AS n FROM districts WHERE region_id = ?', [id]);
+    return n > 0 ? `${n} ${n === 1 ? 'district is' : 'districts are'} still assigned to this region` : null;
+  },
+});
 
 regionsRouter.post('/import', requireAdmin, (req: Request, res: Response, next: NextFunction) => {
   try {
@@ -585,6 +597,7 @@ usersRouter.post('/import', requireAdmin, async (req: Request, res: Response, ne
 // ── Mount sub-routers ─────────────────────────────────────────────────────────
 
 router.use('/regions',     regionsRouter);
+router.use('/districts',   districtsRouter);
 router.use('/departments', departmentsRouter);
 router.use('/facilities',  facilitiesRouter);
 router.use('/org-roles',   orgRolesRouter);
