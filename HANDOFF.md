@@ -25,6 +25,23 @@ decisions log (durable rules go in `DECISIONS.md` instead, then get deleted from
   gets deleted, not marked done and left in place — a growing list of checked-off items is itself
   a symptom of staleness.
 
+## ⚠ First task: migrate to doc-system v1 (added 2026-09-26, keep until done)
+
+Do this before anything in "do this next" below. Don't delete this section when you rewrite the
+handoff; the migration removes it. This repo is on the old doc layout (rules copied into file
+headers, todos scattered, undated plans). The new policy is global: `~/.claude/doc-system.md`,
+checked at session start by `~/.claude/scripts/check-docs.sh`. It was piloted in
+`../aphl-metrics` (see its `plans/archive/2026-09-26-docs-system.md` for a worked example).
+
+- **How:** invoke the `project-docs` skill in **migrate mode**. It measures, drafts
+  `plans/YYYY-MM-DD-docs-migration.md` for sign-off, executes, then runs the checker until it's
+  clean.
+- **Measured 2026-09-26:** CLAUDE.md 14L, DECISIONS.md 141L, HANDOFF.md 56L, plans/ 1 files (budgets: CLAUDE ≤150, DECISIONS ≤300, HANDOFF ≤50).
+- **Repo-specific notes:** keep "pnpm/deploy commands are run by the user, not Claude" and the shadcn-conventions design rule. The git-status rule is now global.
+- Generic conventions now live in `~/.claude/CLAUDE.md` (git status at start, commit only when
+  asked, SSH/SCP via PowerShell, fixed-name test binaries, never kill browsers by image name).
+  Remove duplicates of those from this repo; keep repo-specific parts (ports, binary/host names).
+
 ## Current State
 `apps.nphl.go.ke/wca` and the `wca.nphl.go.ke` → `apps.nphl.go.ke/wca` redirect are **live in prod
 and browser-verified** as of 2026-09-16, including the forced first-login password-change flow —
