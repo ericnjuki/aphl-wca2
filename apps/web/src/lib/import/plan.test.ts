@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   planSections, allErrors, needsConfirmation, confirmationSentence, hasMajorityWarning, formatValue, rowLabel,
-  credentialRows, applySummary, type ImportPlan, type TabPlan,
+  credentialRows, applySummary, isUncertainApplyFailure, UNCERTAIN_APPLY_MESSAGE, type ImportPlan, type TabPlan,
 } from "./plan";
 
 const counts = (over: Partial<TabPlan["counts"]> = {}): TabPlan["counts"] => ({
@@ -88,5 +88,18 @@ describe("formatting", () => {
       tab({ tab: "Users", counts: counts({ added: 1, disabled: 2 }) }),
     ]))).toBe("Applied: 3 added, 1 archived, 2 disabled.");
     expect(applySummary(plan([tab({ counts: counts({ unchanged: 4 }) })]))).toBe("No changes were needed.");
+  });
+});
+
+describe("isUncertainApplyFailure", () => {
+  it("is true for gateway, timeout and network failures, where the server may still have committed", () => {
+    for (const status of [0, 502, 503, 504]) expect(isUncertainApplyFailure(status)).toBe(true);
+  });
+  it("is false for definite answers", () => {
+    for (const status of [200, 400, 403, 409, 413, 422, 500]) expect(isUncertainApplyFailure(status)).toBe(false);
+  });
+  it("tells the admin how to check", () => {
+    expect(UNCERTAIN_APPLY_MESSAGE).toContain("may still have been applied");
+    expect(UNCERTAIN_APPLY_MESSAGE).toContain("Users page");
   });
 });

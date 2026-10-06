@@ -13,7 +13,7 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { postWorkbook, XLSX_MIME } from "@/lib/api";
 import {
-  KIND_LABEL, allErrors, applySummary, confirmationSentence, credentialRows, formatValue, hasMajorityWarning,
+  KIND_LABEL, UNCERTAIN_APPLY_MESSAGE, allErrors, applySummary, confirmationSentence, credentialRows, formatValue, hasMajorityWarning, isUncertainApplyFailure,
   needsConfirmation, planSections, rowLabel, type ApplyResult, type ImportCredential, type ImportPlan, type Tone,
 } from "@/lib/import/plan";
 
@@ -106,6 +106,13 @@ export function ImportWorkbookDialog({
     if (id !== requestId.current) return;
     setLoading(false);
     if (res.error !== null) {
+      if (isUncertainApplyFailure(res.status)) {
+        // The server may still have committed: re-run the preview so the admin can tell.
+        toast.error(UNCERTAIN_APPLY_MESSAGE);
+        setPlan(null);
+        if (!(await preview(file))) setStep("upload");
+        return;
+      }
       toast.error(res.error);
       if (res.status === 409) {
         // Data moved on: drop the stale plan, show the fresh one, or start over if that fails.

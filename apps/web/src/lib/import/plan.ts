@@ -113,3 +113,12 @@ export function applySummary(plan: ImportPlan): string {
   const parts = BADGES.map((b) => [b.label, total(b.key)] as const).filter(([, n]) => n > 0).map(([label, n]) => `${n} ${label}`);
   return parts.length ? `Applied: ${parts.join(", ")}.` : "No changes were needed.";
 }
+
+/** Status 0 is the client's own "network error"; 502-504 come from the proxy when the server outlasts it. */
+export function isUncertainApplyFailure(status: number): boolean {
+  return status === 0 || status === 502 || status === 503 || status === 504;
+}
+
+export const UNCERTAIN_APPLY_MESSAGE =
+  "The import may still have been applied. Preview the file again to check — if it shows no changes, it was applied; " +
+  "new users' temporary passwords are on the Users page.";
