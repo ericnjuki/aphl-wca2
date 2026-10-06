@@ -1,6 +1,6 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { query, execute, transaction } from '../db/database';
-import { requireAuth, requirePasswordChanged } from '../middleware/auth';
+import { requireAuth, requirePasswordChanged, denyMonitor } from '../middleware/auth';
 import { createError } from '../middleware/errorHandler';
 import {
   extractResponses,
@@ -30,7 +30,7 @@ router.use(requireAuth, requirePasswordChanged);
 
 // ── POST /survey/sessions ─────────────────────────────────────────────────────
 // Create a new in_progress session for a domain.
-router.post('/sessions', (req: Request, res: Response, next: NextFunction) => {
+router.post('/sessions', denyMonitor, (req: Request, res: Response, next: NextFunction) => {
   try {
     const { domain_code, domain_name } = req.body as {
       domain_code?: string;
@@ -93,7 +93,7 @@ router.get('/sessions', (req: Request, res: Response, next: NextFunction) => {
 
 // ── PUT /survey/sessions/:id ──────────────────────────────────────────────────
 // Save draft progress (survey_data + ui_state).
-router.put('/sessions/:id', (req: Request, res: Response, next: NextFunction) => {
+router.put('/sessions/:id', denyMonitor, (req: Request, res: Response, next: NextFunction) => {
   try {
     const sessionId = Number(req.params.id);
     const { survey_data, ui_state } = req.body as {
@@ -132,7 +132,7 @@ router.put('/sessions/:id', (req: Request, res: Response, next: NextFunction) =>
 // Mark a session as completed, store the final data, AND write granular
 // per-subcompetency rows into user_assessment_responses so reports can
 // aggregate without parsing the JSON blob at query time.
-router.post('/sessions/:id/complete', (req: Request, res: Response, next: NextFunction) => {
+router.post('/sessions/:id/complete', denyMonitor, (req: Request, res: Response, next: NextFunction) => {
   try {
     const sessionId = Number(req.params.id);
     const userId = req.session.userId!;
