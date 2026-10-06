@@ -64,6 +64,16 @@ export function createFacility(
   return row?.id ?? 0;
 }
 
+export function createDepartment(code: string, name: string, facilityIds: number[] = []): number {
+  execute('INSERT INTO departments (code, name) VALUES (?, ?)', [code, name]);
+  const [row] = query<{ id: number }>('SELECT id FROM departments WHERE code = ? COLLATE NOCASE', [code]);
+  const id = row?.id ?? 0;
+  for (const f of facilityIds) {
+    execute('INSERT INTO facility_departments (facility_id, department_id) VALUES (?, ?)', [f, id]);
+  }
+  return id;
+}
+
 export function createUser(opts: { role?: 'admin' | 'staff'; facilityId?: number | null } = {}): number {
   seq++;
   const email = `u${seq}@example.test`;
@@ -82,6 +92,7 @@ export function addResponse(opts: {
   facilityId?: number | null;
   regionId?: number | null;
   districtId?: number | null;
+  departmentId?: number | null;
   level?: number;
 }): number {
   execute(
@@ -98,9 +109,10 @@ export function addResponse(opts: {
   execute(
     `INSERT INTO user_assessment_responses
        (user_assessment_id, user_id, domain_code, competency_value, subcompetency_value,
-        response_level, facility_id, region_id, district_id)
-     VALUES (?, ?, 'LAB', '1', '1.01', ?, ?, ?, ?)`,
-    [uaId, opts.userId, opts.level ?? 2, opts.facilityId ?? null, opts.regionId ?? null, opts.districtId ?? null],
+        response_level, facility_id, region_id, district_id, department_id)
+     VALUES (?, ?, 'LAB', '1', '1.01', ?, ?, ?, ?, ?)`,
+    [uaId, opts.userId, opts.level ?? 2, opts.facilityId ?? null, opts.regionId ?? null, opts.districtId ?? null,
+     opts.departmentId ?? null],
   );
   const [resp] = query<{ id: number }>(
     `SELECT id FROM user_assessment_responses WHERE user_assessment_id = ? ORDER BY id DESC LIMIT 1`,

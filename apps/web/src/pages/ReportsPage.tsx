@@ -1,4 +1,4 @@
-import { Navigate, useParams } from 'react-router-dom';
+import { Navigate, useParams, useSearchParams } from 'react-router-dom';
 
 import { ContentLayout } from '@/components/admin-panel/content-layout';
 import { useAuthStore } from '@/store/auth';
@@ -30,6 +30,9 @@ function ReportsPage() {
   const facilityId   = params.facilityId   ? Number(params.facilityId)   : null;
   const departmentId = params.departmentId ? Number(params.departmentId) : null;
   const userId       = params.userId       ? Number(params.userId)       : null;
+  // Department reports are narrowed to the facility they were opened from.
+  const [searchParams] = useSearchParams();
+  const departmentFacilityId = searchParams.get('facility_id') ? Number(searchParams.get('facility_id')) : null;
 
   const level: ReportLevel =
     userId != null       ? 'individual'
@@ -55,7 +58,7 @@ function ReportsPage() {
   const region     = useRegionReport(regionId);
   const district   = useDistrictReport(districtId);
   const facility   = useFacilityReport(facilityId);
-  const department = useDepartmentReport(departmentId);
+  const department = useDepartmentReport(departmentId, departmentFacilityId);
   const individual = useIndividualReport(userId);
 
   if (redirectTarget) return <Navigate to={redirectTarget} replace />;
@@ -81,6 +84,8 @@ function ReportsPage() {
     crumbs.push({ label: fac.name });
   }
   if (level === 'department' && department.data) {
+    const fac = department.data.facility;
+    if (fac) crumbs.push({ label: fac.name, to: `${baseUrl}reports/facilities/${fac.id}` });
     crumbs.push({ label: department.data.department.name });
   }
   if (level === 'individual' && individual.data) {
@@ -110,7 +115,7 @@ function ReportsPage() {
           {level === 'region'     && regionId     != null && <RegionReport     regionId={regionId}     />}
           {level === 'district'   && districtId   != null && <DistrictReport   districtId={districtId}   />}
           {level === 'facility'   && facilityId   != null && <FacilityReport   facilityId={facilityId} />}
-          {level === 'department' && departmentId != null && <DepartmentReport departmentId={departmentId} />}
+          {level === 'department' && departmentId != null && <DepartmentReport departmentId={departmentId} facilityId={departmentFacilityId} />}
           {level === 'individual' && userId       != null && <IndividualReport userId={userId} />}
         </div>
       </div>
