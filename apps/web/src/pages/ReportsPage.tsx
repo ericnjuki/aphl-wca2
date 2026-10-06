@@ -100,7 +100,7 @@ function ReportsPage() {
         <ReportFilterBar
           level={level}
           crumbs={crumbs}
-          rightSlot={<ExportMenu level={level} payload={exportPayload} />}
+          rightSlot={showRegionPicker ? undefined : <ExportMenu level={level} payload={exportPayload} />}
         />
         <div className="flex-1">
           {level === 'national'   && !showRegionPicker && <NationalReport />}
