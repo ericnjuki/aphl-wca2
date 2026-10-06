@@ -285,6 +285,39 @@ describe('country setup import endpoints', () => {
     expect(generateUsername('!!', '??', new Set(['user']))).toBe('user_2');
   });
 
+  it('trims dots left by a name that strips to nothing', () => {
+    expect(generateUsername('', 'Hassan')).toBe('hassan');
+    expect(generateUsername('!!', 'Hassan')).toBe('hassan');
+    expect(generateUsername('Amina', '--')).toBe('amina');
+  });
+
+  it('archives, not deletes, a region or district that only archived children point at', async () => {
+    const dsm = createRegion('DSM', 'Dar es Salaam');
+    const tmk = createDistrict('TMK', 'Temeke', dsm);
+    const f1 = createFacility('F1', 'Old Clinic', { regionId: dsm, districtId: tmk });
+    execute("UPDATE facilities SET archived_at = datetime('now') WHERE id = ?", [f1]);
+    execute("UPDATE districts SET archived_at = datetime('now') WHERE id = ?", [tmk]);
+    const buf = await buildWorkbook({ Regions: [REGIONS, ['MWZ', 'Mwanza']] });
+    const { body } = await preview(buf);
+    expect((await apply(buf, body.plan.fingerprint)).status).toBe(200);
+    expect(query<{ archived_at: string | null }>('SELECT archived_at FROM regions WHERE id = ?', [dsm]))
+      .toHaveLength(1);
+    expect(query<{ archived_at: string | null }>('SELECT archived_at FROM regions WHERE id = ?', [dsm])[0].archived_at)
+      .not.toBeNull();
+    const dist = await buildWorkbook({ Districts: [DISTRICTS] });
+    const p2 = await preview(dist);
+    expect((await apply(dist, p2.body.plan.fingerprint)).status).toBe(200);
+    expect(query('SELECT id FROM districts WHERE id = ?', [tmk])).toHaveLength(1);
+  });
+
+  it('hashes import temporary passwords at bcrypt cost 10', async () => {
+    const buf = await country();
+    const { body } = await preview(buf);
+    expect((await apply(buf, body.plan.fingerprint)).status).toBe(200);
+    const hash = query<{ password: string }>("SELECT password FROM users WHERE email = 'amina@example.test'")[0].password;
+    expect(bcrypt.getRounds(hash)).toBe(10);
+  });
+
   it('keeps apply and export admin-only', async () => {
     const buf = await country();
     const { body } = await preview(buf);

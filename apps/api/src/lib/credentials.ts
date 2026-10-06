@@ -12,7 +12,7 @@ export function generateTempPassword(): string {
  * `reserved` holds names already handed out in the same batch.
  */
 export function generateUsername(firstName: string, lastName: string, reserved: Set<string> = new Set()): string {
-  const cleaned = `${firstName.toLowerCase()}.${lastName.toLowerCase()}`.replace(/[^a-z0-9.]/g, '');
+  const cleaned = `${firstName.toLowerCase()}.${lastName.toLowerCase()}`.replace(/[^a-z0-9.]/g, '').replace(/^\.+|\.+$/g, '');
   const base = cleaned.replace(/\./g, '') ? cleaned : 'user';
   const existing = new Set(
     query<{ user_name: string }>('SELECT user_name FROM users WHERE user_name LIKE ?', [`${base}%`]).map((r) => r.user_name),

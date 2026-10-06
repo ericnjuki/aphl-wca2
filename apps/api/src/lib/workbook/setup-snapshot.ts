@@ -34,6 +34,19 @@ const txt = (v: unknown) => (v === null || v === undefined ? '' : String(v).trim
 export const responseHistory = (col: string) => `EXISTS (SELECT 1 FROM user_assessment_responses x WHERE x.${col} = t.id)`;
 export const userHistory = (col: string) => `EXISTS (SELECT 1 FROM users x WHERE x.${col} = t.id)`;
 
+// Any child row, archived or not, also counts as history for the parent: a
+// delete would leave it dangling (facilities keep a copy of their region too).
+const childHistory = (sql: string) => `EXISTS (${sql})`;
+const regionHistory = [
+  responseHistory('region_id'),
+  childHistory('SELECT 1 FROM districts x WHERE x.region_id = t.id'),
+  childHistory('SELECT 1 FROM facilities x WHERE x.region_id = t.id'),
+].join(' OR ');
+const districtHistory = [
+  responseHistory('district_id'),
+  childHistory('SELECT 1 FROM facilities x WHERE x.district_id = t.id'),
+].join(' OR ');
+
 function entities(table: string, historySql: string): SnapEntity[] {
   return query<{ id: number; code: string; name: string; archived_at: string | null; has_history: number }>(
     `SELECT t.id, t.code, t.name, t.archived_at, (${historySql}) AS has_history FROM ${table} t ORDER BY t.code`,
@@ -50,7 +63,7 @@ function groupCodes(rows: { owner: number; code: string }[]): Map<number, string
 }
 
 export function loadSetupSnapshot(): SetupSnapshot {
-  const regions = entities('regions', responseHistory('region_id'));
+  const regions = entities('regions', regionHistory);
   const departments = entities('departments', responseHistory('department_id'));
   const orgRoles = entities('org_roles', userHistory('org_role_id'));
   const titles = entities('user_titles', userHistory('title_id'));
@@ -60,7 +73,7 @@ export function loadSetupSnapshot(): SetupSnapshot {
       'SELECT d.id, r.code AS region_code FROM districts d LEFT JOIN regions r ON r.id = d.region_id',
     ).map((r) => [r.id, up(r.region_code)]),
   );
-  const districts = entities('districts', responseHistory('district_id'))
+  const districts = entities('districts', districtHistory)
     .map((e) => ({ ...e, regionCode: districtRegion.get(e.id) ?? '' }));
 
   const facilityInfo = new Map(

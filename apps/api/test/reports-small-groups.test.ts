@@ -1,5 +1,6 @@
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import request from 'supertest';
+import { execute } from '../src/db/database';
 import {
   initTestDb, resetDb, testApp, asUser, createRegion, createDistrict, createFacility,
   createUser, assignRegions, createDepartment, addResponse,
@@ -167,5 +168,29 @@ describe('small-group suppression for partner users', () => {
     expect(row(res.body.items, 'department_id', c).suppressed).toBe('small');
     expect(row(res.body.items, 'department_id', a).suppressed).toBe('complementary');
     expect(row(res.body.items, 'department_id', b).suppressed).toBeUndefined();
+  });
+
+  it('suppresses a small archived child, flagged archived, and never picks an empty archived one as the complement', async () => {
+    const mwz = createRegion('MWZ', 'Mwanza');
+    const nya = createDistrict('NYA', 'Nyamagana', mwz);
+    const mk = (code: string, name: string) => createFacility(code, name, { regionId: mwz, districtId: nya });
+    const fA = mk('FA', 'Alpha Clinic'), fD = mk('FD', 'Delta Clinic');
+    const fOld = mk('FO', 'Old Small Clinic'), fEmpty = mk('FE', 'Empty Old Clinic');
+    const resp = (facilityId: number, n: number) => {
+      for (let i = 0; i < n; i++) {
+        addResponse({ userId: createUser({ facilityId }), facilityId, regionId: mwz, districtId: nya, level: 2 });
+      }
+    };
+    resp(fA, 3); resp(fD, 4); resp(fOld, 2);
+    execute("UPDATE facilities SET archived_at = datetime('now') WHERE id IN (?, ?)", [fOld, fEmpty]);
+    const partner = createUser({ role: 'monitor' });
+    assignRegions(partner, [mwz]);
+
+    const res = await get(`/reports/districts/${nya}`, partner);
+    expect(res.status).toBe(200);
+    expect(row(res.body.items, 'facility_id', fOld)).toMatchObject({ ...HIDDEN, archived: true });
+    expect(row(res.body.items, 'facility_id', fA)).toMatchObject({ suppressed: 'complementary' });
+    expect(row(res.body.items, 'facility_id', fD).suppressed).toBeUndefined();
+    expect(res.body.items.map((i: { facility_id: number }) => i.facility_id)).not.toContain(fEmpty);
   });
 });

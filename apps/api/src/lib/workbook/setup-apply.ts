@@ -114,6 +114,10 @@ function removeEntity(tab: OrgTab, op: OrgOp): void {
 
 // ── Users ─────────────────────────────────────────────────────────────────────
 
+// Import temporary passwords are single-use (forced change at first login), so a
+// cheaper cost keeps a first import of hundreds of users inside the proxy timeout.
+const IMPORT_TEMP_BCRYPT_COST = 10;
+
 interface Secret { temp: string; hash: string }
 interface PreparedUser extends Secret { op: UserOp; username: string }
 
@@ -169,7 +173,7 @@ export async function prepareSecrets(ops: SetupOps): Promise<Map<string, Secret>
   for (const op of ops.users) {
     if (op.kind !== 'add') continue;
     const temp = generateTempPassword();
-    secrets.set(op.values.email.toLowerCase(), { temp, hash: await bcrypt.hash(temp, 12) });
+    secrets.set(op.values.email.toLowerCase(), { temp, hash: await bcrypt.hash(temp, IMPORT_TEMP_BCRYPT_COST) });
   }
   return secrets;
 }
