@@ -3,6 +3,9 @@ import { getDb, execute, query } from '../src/db/database';
 import { runMigrations } from '../src/db/migrations';
 import adminRouter from '../src/routes/admin';
 import reportsRouter from '../src/routes/reports';
+import surveyRouter from '../src/routes/survey';
+import myAssessmentsRouter from '../src/routes/my-assessments';
+import authRouter from '../src/routes/auth';
 import { errorHandler } from '../src/middleware/errorHandler';
 
 export async function initTestDb(): Promise<void> {
@@ -11,7 +14,7 @@ export async function initTestDb(): Promise<void> {
 }
 
 const TABLES = [
-  'user_assessment_responses', 'user_assessments', 'facility_departments',
+  'user_regions', 'user_assessment_responses', 'user_assessments', 'facility_departments',
   'facilities', 'districts', 'regions', 'departments', 'users',
 ];
 
@@ -31,6 +34,9 @@ export function testApp(): express.Express {
   });
   app.use('/admin', adminRouter);
   app.use('/reports', reportsRouter);
+  app.use('/survey', surveyRouter);
+  app.use('/my-assessments', myAssessmentsRouter);
+  app.use('/auth', authRouter);
   app.use(errorHandler);
   return app;
 }
@@ -64,7 +70,7 @@ export function createFacility(
   return row?.id ?? 0;
 }
 
-export function createUser(opts: { role?: 'admin' | 'staff'; facilityId?: number | null } = {}): number {
+export function createUser(opts: { role?: 'admin' | 'staff' | 'monitor'; facilityId?: number | null } = {}): number {
   seq++;
   const email = `u${seq}@example.test`;
   execute(
@@ -107,4 +113,20 @@ export function addResponse(opts: {
     [uaId],
   );
   return resp?.id ?? 0;
+}
+
+export function assignRegions(userId: number, regionIds: number[]): void {
+  for (const rid of regionIds) {
+    execute('INSERT INTO user_regions (user_id, region_id) VALUES (?, ?)', [userId, rid]);
+  }
+}
+
+export function createDepartment(code: string, name: string, facilityId?: number): number {
+  execute('INSERT INTO departments (code, name) VALUES (?, ?)', [code, name]);
+  const [row] = query<{ id: number }>('SELECT id FROM departments WHERE code = ? COLLATE NOCASE', [code]);
+  const id = row?.id ?? 0;
+  if (facilityId) {
+    execute('INSERT INTO facility_departments (facility_id, department_id) VALUES (?, ?)', [facilityId, id]);
+  }
+  return id;
 }
