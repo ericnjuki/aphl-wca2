@@ -64,25 +64,58 @@ const COUNTS_SELECT = `
 
 // Partner (monitor) users see aggregates only. A bucket built from fewer than
 // MIN_GROUP_SIZE people would expose those people's results, so its counts
-// are blanked and the row is flagged `suppressed`. Empty buckets are left as-is.
+// are blanked and the row is flagged `suppressed: 'small'`. Empty buckets are
+// left as-is.
+//
+// A single hidden row could still be recovered as `parent total - visible
+// rows`, so when exactly one row is hidden the smallest other non-empty row is
+// hidden too (`suppressed: 'complementary'`). Lists arrive ordered by name, so
+// ties go to the first by name.
 const MIN_GROUP_SIZE = 3;
 const BLANK_COUNTS = {
   respondents: 0, total_responses: 0, avg_level: null,
   count_na: 0, count_beginner: 0, count_competent: 0, count_proficient: 0, count_expert: 0,
 };
 
+type Suppression = 'small' | 'complementary';
+
 function suppressSmallGroups<T extends Record<string, unknown>>(scope: Scope, items: T[]): T[] {
   if (scope.role !== 'monitor') return items;
-  return items.map((item) => {
-    const n = Number(item.respondents ?? 0);
-    return n > 0 && n < MIN_GROUP_SIZE ? { ...item, ...BLANK_COUNTS, suppressed: true } : item;
+  const count = (item: T) => Number(item.respondents ?? 0);
+
+  const hidden = new Map<number, Suppression>();
+  items.forEach((item, i) => {
+    const n = count(item);
+    if (n > 0 && n < MIN_GROUP_SIZE) hidden.set(i, 'small');
+  });
+
+  if (hidden.size === 1) {
+    let pick = -1;
+    items.forEach((item, i) => {
+      if (hidden.has(i) || count(item) === 0) return;
+      if (pick === -1 || count(item) < count(items[pick])) pick = i;
+    });
+    if (pick !== -1) hidden.set(pick, 'complementary');
+  }
+
+  return items.map((item, i) => {
+    const kind = hidden.get(i);
+    return kind ? { ...item, ...BLANK_COUNTS, suppressed: kind } : item;
   });
 }
 
-function meta(f: CommonFilters, totalRespondents: number, unassigned: number) {
+// The view-wide average is hidden from partners when the view itself is a
+// small group (1-2 people), for the same reason rows are.
+function viewAvg(scope: Scope, counts: { total: number; avg: number | null }): number | null {
+  if (scope.role === 'monitor' && counts.total > 0 && counts.total < MIN_GROUP_SIZE) return null;
+  return counts.avg;
+}
+
+function meta(f: CommonFilters, totalRespondents: number, unassigned: number, avgLevel: number | null = null) {
   return {
     total_respondents: totalRespondents,
     unassigned_respondents: unassigned,
+    avg_level: avgLevel,
     generated_at: new Date().toISOString(),
     filters: {
       domain_code: f.domainCode,
@@ -104,19 +137,20 @@ function respondentCounts(
   whereParams: SqlValue[],
   f: CommonFilters,
   unassigned: 'region_id' | 'district_id' | 'facility_id' | 'department_id' | { sql: string; params: SqlValue[] },
-): { total: number; unassigned: number } {
+): { total: number; unassigned: number; avg: number | null } {
   const unassignedSql = typeof unassigned === 'string' ? `uar.${unassigned} IS NULL` : unassigned.sql;
   const unassignedParams = typeof unassigned === 'string' ? [] : unassigned.params;
-  const [row] = query<{ total: number; unassigned: number }>(
+  const [row] = query<{ total: number; unassigned: number; avg_level: number | null }>(
     `SELECT
        COUNT(DISTINCT uar.user_id)                                       AS total,
-       COUNT(DISTINCT CASE WHEN ${unassignedSql} THEN uar.user_id END)   AS unassigned
+       COUNT(DISTINCT CASE WHEN ${unassignedSql} THEN uar.user_id END)   AS unassigned,
+       AVG(CASE WHEN uar.response_level > 0 THEN uar.response_level END) AS avg_level
      FROM user_assessment_responses uar
      LEFT JOIN user_assessments ua ON ua.id = uar.user_assessment_id${uaOnFilter(f)}
      ${whereSql}`,
     [...unassignedParams, ...whereParams],
   );
-  return { total: row?.total ?? 0, unassigned: row?.unassigned ?? 0 };
+  return { total: row?.total ?? 0, unassigned: row?.unassigned ?? 0, avg: row?.avg_level ?? null };
 }
 
 // ── GET /reports/national ──────────────────────────────────────────────────
@@ -147,7 +181,7 @@ router.get('/national', (req: Request, res: Response, next: NextFunction) => {
     // At national level, "unassigned" = no region_id → not in any regional bucket.
     const counts = respondentCounts(whereSql, whereParams, f, 'region_id');
 
-    res.json({ level: 'national', items, meta: meta(f, counts.total, counts.unassigned) });
+    res.json({ level: 'national', items, meta: meta(f, counts.total, counts.unassigned, viewAvg(scope, counts)) });
   } catch (err) { next(err); }
 });
 
@@ -198,7 +232,7 @@ router.get('/regions/:regionId', (req: Request, res: Response, next: NextFunctio
       params: [regionId],
     });
 
-    res.json({ level: 'region', region, items: suppressSmallGroups(scope, items), undistricted_facilities, meta: meta(f, counts.total, counts.unassigned) });
+    res.json({ level: 'region', region, items: suppressSmallGroups(scope, items), undistricted_facilities, meta: meta(f, counts.total, counts.unassigned, viewAvg(scope, counts)) });
   } catch (err) { next(err); }
 });
 
@@ -240,7 +274,7 @@ router.get('/districts/:districtId', (req: Request, res: Response, next: NextFun
     // At district level, unassigned = respondents in this district with no facility_id.
     const counts = respondentCounts('WHERE ' + whereParts.join(' AND '), whereParams, f, 'facility_id');
 
-    res.json({ level: 'district', district, items: suppressSmallGroups(scope, items), meta: meta(f, counts.total, counts.unassigned) });
+    res.json({ level: 'district', district, items: suppressSmallGroups(scope, items), meta: meta(f, counts.total, counts.unassigned, viewAvg(scope, counts)) });
   } catch (err) { next(err); }
 });
 
@@ -289,7 +323,7 @@ router.get('/facilities/:facilityId', (req: Request, res: Response, next: NextFu
     // At facility level, unassigned = respondents in this facility with no department_id.
     const counts = respondentCounts('WHERE ' + whereParts.join(' AND '), whereParams, f, 'department_id');
 
-    res.json({ level: 'facility', facility, items: suppressSmallGroups(scope, items), meta: meta(f, counts.total, counts.unassigned) });
+    res.json({ level: 'facility', facility, items: suppressSmallGroups(scope, items), meta: meta(f, counts.total, counts.unassigned, viewAvg(scope, counts)) });
   } catch (err) { next(err); }
 });
 
@@ -354,7 +388,7 @@ router.get('/departments/:departmentId', (req: Request, res: Response, next: Nex
     // separate "unassigned" concept. Zero out to keep the meta shape stable.
     const counts = respondentCounts('WHERE ' + whereParts.join(' AND '), whereParams, f, 'department_id');
 
-    res.json({ level: 'department', department, facility, items, meta: meta(f, counts.total, 0) });
+    res.json({ level: 'department', department, facility, items, meta: meta(f, counts.total, 0, viewAvg(scope, counts)) });
   } catch (err) { next(err); }
 });
 
