@@ -6,7 +6,7 @@ import { planSetupImport } from '../src/lib/workbook/setup-planner';
 import { ImportPlan, TabPlan } from '../src/lib/workbook/plan';
 import {
   initTestDb, resetDb, buildWorkbook, SheetData, createRegion, createDistrict, createFacility, createDepartment,
-  createUser, USERS_HEADER, userSheetRow,
+  createUser, createOrgRole, createTitle, USERS_HEADER, userSheetRow,
 } from './helpers';
 
 async function planFor(sheets: SheetData, actor: number): Promise<ImportPlan> {
@@ -222,6 +222,91 @@ describe('country setup plan — users', () => {
         },
       },
       expect.objectContaining({ kind: 'disable', id: staff }),
+    ]);
+  });
+  it('plans enabled-to-disabled via status as a disable and counts it', async () => {
+    const other = createUser({ email: 'other@example.test' });
+    const row = userSheetRow(other);
+    row[11] = 'disabled';
+    const plan = await planFor(users(userSheetRow(staff), row), admin);
+    const u = tab(plan, 'Users');
+    expect(u.changes).toEqual([
+      { row: 4, key: 'other@example.test', kind: 'disable', fields: [{ field: 'status', from: 'active', to: 'disabled' }] },
+    ]);
+    expect(u.counts).toMatchObject({ disabled: 1, updated: 0 });
+    expect(plan.confirmations.disabledUsers).toBe(1);
+    expect(u.warnings).toEqual([]);
+  });
+
+  it('warns when more than half of the users are disabled via status', async () => {
+    const a = createUser(), b = createUser();
+    const rowA = userSheetRow(a), rowB = userSheetRow(b);
+    const rowS = userSheetRow(staff);
+    rowA[11] = 'disabled'; rowB[11] = 'disabled'; rowS[11] = 'disabled';
+    const u = tab(await planFor(users(rowS, rowA, rowB), admin), 'Users');
+    expect(u.warnings).toContain('3 of 4 active users would be disabled — this usually means the wrong file.');
+  });
+
+  it('does not warn when exactly half of the users are disabled', async () => {
+    const u = tab(await planFor(users(), admin), 'Users'); // staff absent: 1 of 2
+    expect(u.changes).toHaveLength(1);
+    expect(u.warnings.some((w) => w.includes('wrong file'))).toBe(false);
+  });
+
+  it('blocks apply on errors, orders the tabs and fingerprints deterministically', async () => {
+    const bad = await planFor(users(['a@x.test', 'A', 'A', '1', 'Licence', '', '', '', '', '', '', '']), admin);
+    expect(bad.canApply).toBe(false);
+    expect(bad.tabs.map((t) => t.tab)).toEqual([
+      'Regions', 'Districts', 'Departments', 'Facilities', 'Org Roles', 'Job Titles', 'Users',
+    ]);
+    const row = ['n@x.test', 'N', 'P', '9', 'NRC', '', '', '', '', '', '', ''];
+    const one = await planFor(users(row), admin);
+    const two = await planFor(users(row), admin);
+    const changed = await planFor(users(['n@x.test', 'N', 'Q', '9', 'NRC', '', '', '', '', '', '', '']), admin);
+    expect(two.fingerprint).toBe(one.fingerprint);
+    expect(changed.fingerprint).not.toBe(one.fingerprint);
+  });
+
+  it('rejects a legacy id_type changed to a different unlisted value', async () => {
+    const row = userSheetRow(admin);
+    row[4] = 'Voter card';
+    const u = tab(await planFor({ Users: [USERS_HEADER, row] }, admin), 'Users');
+    expect(u.errors).toContainEqual({ row: 2, column: 'id_type', message: 'id_type must be one of NRC, Passport, Other' });
+  });
+
+  it('keeps partners free of org role and title, and leaves valid partners unchanged', async () => {
+    createOrgRole('SUP', 'Supervisor');
+    createTitle('MT', 'Med Tech');
+    const bad = tab(await planFor(users(
+      ['m1@x.test', 'M', 'One', 'm1', 'NRC', 'monitor', '', '', 'SUP', '', 'DSM', ''],
+      ['m2@x.test', 'M', 'Two', 'm2', 'NRC', 'monitor', '', '', '', 'MT', 'DSM', ''],
+    ), admin), 'Users');
+    expect(bad.errors).toEqual([
+      { row: 3, column: null, message: 'Partner (monitor) users cannot have a facility, department, org role or title' },
+      { row: 4, column: null, message: 'Partner (monitor) users cannot have a facility, department, org role or title' },
+    ]);
+
+    const mon = createUser({ role: 'monitor', email: 'mon@example.test' });
+    execute('INSERT INTO user_regions (user_id, region_id) VALUES (?, ?)', [mon, dsm]);
+    const ok = tab(await planFor(users(userSheetRow(staff), userSheetRow(mon)), admin), 'Users');
+    expect(ok.errors).toEqual([]);
+    expect(ok.changes).toEqual([]);
+    expect(ok.counts.unchanged).toBe(3);
+  });
+
+  it('matches an email differing only in case from an existing user instead of adding it', async () => {
+    const u = tab(await planFor(users(['AMINA@EXAMPLE.TEST', 'Amina', 'Hassan', '123', 'NRC', '', 'F1', 'LAB', '', '', '', '']), admin), 'Users');
+    expect(u.counts.added).toBe(0);
+    expect(u.errors).toEqual([]);
+  });
+
+  it('returns an update op keeping the database spelling of the email', async () => {
+    const parsed = await readSetupWorkbook(await buildWorkbook(users(
+      ['AMINA@example.test', 'Amina', 'Hassan-Juma', '123', 'NRC', '', 'F1', 'LAB', '', '', '', ''],
+    )));
+    const { ops } = planSetupImport(parsed, loadSetupSnapshot(), admin);
+    expect(ops.users).toEqual([
+      expect.objectContaining({ kind: 'update', id: staff, values: expect.objectContaining({ email: 'Amina@Example.test', last_name: 'Hassan-Juma' }) }),
     ]);
   });
 });

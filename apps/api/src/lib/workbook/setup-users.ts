@@ -122,6 +122,7 @@ function checkUser(v: UserValues, org: OrgState): Problem[] {
   ref('title_code', v.title_code, TAB.titles);
   for (const code of splitList(v.region_codes)) ref('region_codes', code, TAB.regions);
 
+  // Disabled users keep their history, so their department is not re-validated against the facility.
   if (v.department_code && !disabled) {
     if (!v.facility_code) {
       out.push({ column: 'department_code', message: 'department_code needs a facility_code' });
@@ -196,6 +197,7 @@ export function planUsersTab(
   }
 
   // 3. Changes for valid rows.
+  let statusDisabled = 0;
   for (const r of rows) {
     if (!r.valid) continue;
     if (!r.prev) {
@@ -206,7 +208,11 @@ export function planUsersTab(
     const fields = diffFields(snapValues(r.prev), r.values, USER_FIELDS);
     if (fields.length) {
       ops.push({ kind: 'update', id: r.prev.id, values: { ...r.values, email: r.prev.email } });
-      plan.changes.push({ row: r.row, key: r.prev.email, kind: 'update', fields });
+      // enabled → disabled via status is a 'disable' in the plan (confirmations, majority warning);
+      // the op stays an 'update' carrying values.status so apply needs no special case.
+      const kind = r.prev.enabled && r.values.status === 'disabled' ? 'disable' : 'update';
+      if (kind === 'disable') statusDisabled++;
+      plan.changes.push({ row: r.row, key: r.prev.email, kind, fields });
     } else {
       plan.counts.unchanged++;
     }
@@ -229,8 +235,9 @@ export function planUsersTab(
   if (disabled > 0) {
     plan.warnings.push(`${disabled} ${disabled === 1 ? 'user is' : 'users are'} not in the Users tab and will be disabled.`);
   }
-  if (enabledBefore > 0 && disabled / enabledBefore > 0.5) {
-    plan.warnings.push(`${disabled} of ${enabledBefore} active users would be disabled — ${MAJORITY_WARNING}.`);
+  const totalDisabled = disabled + statusDisabled;
+  if (enabledBefore > 0 && totalDisabled / enabledBefore > 0.5) {
+    plan.warnings.push(`${totalDisabled} of ${enabledBefore} active users would be disabled — ${MAJORITY_WARNING}.`);
   }
 
   // 5. Lock-out guards.
