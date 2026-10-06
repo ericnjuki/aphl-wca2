@@ -28,6 +28,22 @@ describe('admin: partner (monitor) users', () => {
   const post = (body: object) => request(app).post('/admin/users').set(asUser(admin)).send(body);
   const put = (id: number, body: object) => request(app).put(`/admin/users/${id}`).set(asUser(admin)).send(body);
 
+  it('rejects an unknown role on create and creates no user', async () => {
+    const body = { ...person(), role: 'Monitor' };
+    const res = await post(body);
+    expect(res.status).toBe(400);
+    expect(JSON.stringify(res.body)).toMatch(/role must be one of: staff, admin, monitor/);
+    expect(query('SELECT id FROM users WHERE email = ?', [body.email])).toHaveLength(0);
+  });
+
+  it('rejects an unknown role on update', async () => {
+    const u = createUser();
+    const res = await put(u, { role: 'Monitor' });
+    expect(res.status).toBe(400);
+    expect(JSON.stringify(res.body)).toMatch(/role must be one of: staff, admin, monitor/);
+    expect(query<{ role: string }>('SELECT role FROM users WHERE id = ?', [u])[0].role).toBe('staff');
+  });
+
   it('creates a monitor with regions', async () => {
     const res = await post({ ...person(), role: 'monitor', region_ids: [mwz, dsm] });
     expect(res.status).toBe(201);

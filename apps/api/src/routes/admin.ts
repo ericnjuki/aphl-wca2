@@ -436,6 +436,9 @@ function sanitiseUser(u: UserRow & Record<string, unknown>) {
 
 type Placement = { facility_id: unknown; department_id: unknown; org_role_id: unknown; title_id: unknown };
 
+const USER_ROLES = ['staff', 'admin', 'monitor'];
+const ROLE_ERROR = 'role must be one of: staff, admin, monitor';
+
 function validatePlacement(
   role: string, placement: Placement, rawRegionIds: unknown,
 ): { regionIds: number[] } | { error: string } {
@@ -475,6 +478,7 @@ usersRouter.post('/', requireAdmin, async (req: Request, res: Response, next: Ne
             facility_id, department_id, org_role_id, title_id, role = 'staff' } = req.body as Partial<UserRow>;
     if (!first_name || !last_name || !national_id || !id_type || !email)
       return next(createError('first_name, last_name, national_id, id_type, email are required', 400));
+    if (!USER_ROLES.includes(role)) return next(createError(ROLE_ERROR, 400));
     const placement = validatePlacement(
       role, { facility_id, department_id, org_role_id, title_id }, (req.body as { region_ids?: unknown }).region_ids,
     );
@@ -522,6 +526,7 @@ usersRouter.put('/:id', requireAdmin, (req: Request, res: Response, next: NextFu
       : role === 'monitor'
         ? query<{ region_id: number }>('SELECT region_id FROM user_regions WHERE user_id = ?', [id]).map((r) => r.region_id)
         : [];
+    if (!USER_ROLES.includes(role)) return next(createError(ROLE_ERROR, 400));
     const placement = validatePlacement(role, { facility_id, department_id, org_role_id, title_id }, regionInput);
     if ('error' in placement) return next(createError(placement.error, 400));
     try {
