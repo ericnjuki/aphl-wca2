@@ -92,13 +92,16 @@ export function useFacilityReport(facilityId: number | null) {
   });
 }
 
-export function useDepartmentReport(departmentId: number | null) {
+export function useDepartmentReport(departmentId: number | null, facilityId: number | null = null) {
   const filters = useFilters();
   return useQuery({
-    queryKey: ['reports', 'department', departmentId, filters],
+    queryKey: ['reports', 'department', departmentId, facilityId, filters],
     enabled: departmentId != null,
     queryFn: async () => {
-      const res = await api.get<DepartmentReportResponse>(`/reports/departments/${departmentId}${qs(filters)}`);
+      const params = new URLSearchParams(qs(filters));
+      if (facilityId != null) params.set('facility_id', String(facilityId));
+      const s = params.toString();
+      const res = await api.get<DepartmentReportResponse>(`/reports/departments/${departmentId}${s ? `?${s}` : ''}`);
       if (res.error !== null) throw new Error(res.error);
       return res.data;
     },

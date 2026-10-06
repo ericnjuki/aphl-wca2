@@ -27,7 +27,7 @@ describe('monitor report scope', () => {
     fDsm = createFacility('F1', 'Temeke Hospital', { regionId: dsm, districtId: tmk });
     fMwz = createFacility('F2', 'Nyamagana Clinic', { regionId: mwz, districtId: nya });
     fAru = createFacility('F3', 'Arusha Lab', { regionId: aru, districtId: ard });
-    dept = createDepartment('LAB', 'Laboratory', fDsm);
+    dept = createDepartment('LAB', 'Laboratory', [fDsm]);
     staffDsm = createUser({ facilityId: fDsm });
     monitor = createUser({ role: 'monitor' });
     assignRegions(monitor, [dsm, mwz]);

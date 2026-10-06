@@ -96,6 +96,8 @@ export interface DepartmentItem extends MaturityCounts {
 export interface DepartmentReportResponse {
   level: 'department';
   department: { id: number; name: string };
+  // Facility the grid is narrowed to; null for the admin cross-facility view.
+  facility: { id: number; name: string } | null;
   items: DepartmentItem[];
   meta: ReportMeta;
 }

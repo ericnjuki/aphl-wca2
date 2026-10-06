@@ -19,7 +19,7 @@ export function FacilityReport({ facilityId }: Props) {
   const isMonitor = useAuthStore((s) => s.user?.role === 'monitor');
   const openDepartment = isMonitor
     ? undefined
-    : (key: string) => navigate(`${baseUrl}reports/departments/${key}`);
+    : (key: string) => navigate(`${baseUrl}reports/departments/${key}?facility_id=${facilityId}`);
   const { data, isPending, isError, error } = useFacilityReport(facilityId);
 
   if (isPending) return <ChartSkeleton />;
