@@ -9,11 +9,11 @@ import { ReportKpiCards } from '../ReportKpiCards';
 const ENV = import.meta.env;
 const baseUrl = ENV.VITE_BASE_URL || '/';
 
-interface Props { departmentId: number }
+interface Props { departmentId: number; facilityId: number | null }
 
-export function DepartmentReport({ departmentId }: Props) {
+export function DepartmentReport({ departmentId, facilityId }: Props) {
   const navigate = useNavigate();
-  const { data, isPending, isError, error } = useDepartmentReport(departmentId);
+  const { data, isPending, isError, error } = useDepartmentReport(departmentId, facilityId);
 
   if (isPending) return <ChartSkeleton />;
   if (isError) return <div className="p-6 text-sm text-destructive">Error: {(error as Error).message}</div>;

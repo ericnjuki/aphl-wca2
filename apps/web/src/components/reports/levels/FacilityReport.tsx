@@ -46,14 +46,14 @@ export function FacilityReport({ facilityId }: Props) {
               label: r.department_name,
               ...r,
             }))}
-            onBarClick={(key) => navigate(`${baseUrl}reports/departments/${key}`)}
+            onBarClick={(key) => navigate(`${baseUrl}reports/departments/${key}?facility_id=${facilityId}`)}
             emptyText="No departments linked to this facility"
           />
         </div>
       </div>
       <MaturityBreakdownTable
         rows={data.items.map((r) => ({ key: String(r.department_id), label: r.department_name, ...r }))}
-        onRowClick={(key) => navigate(`${baseUrl}reports/departments/${key}`)}
+        onRowClick={(key) => navigate(`${baseUrl}reports/departments/${key}?facility_id=${facilityId}`)}
         labelHeader="Department"
       />
     </div>

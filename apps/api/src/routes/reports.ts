@@ -277,6 +277,9 @@ router.get('/facilities/:facilityId', (req: Request, res: Response, next: NextFu
 });
 
 // ── GET /reports/departments/:departmentId ────────────────────────────────
+// Departments are shared across facilities, so the grid is narrowed to one
+// facility via ?facility_id=. Staff are always pinned to their own facility;
+// admins without facility_id get the cross-facility view.
 router.get('/departments/:departmentId', (req: Request, res: Response, next: NextFunction) => {
   try {
     const departmentId = Number(req.params.departmentId);
@@ -284,13 +287,30 @@ router.get('/departments/:departmentId', (req: Request, res: Response, next: Nex
     const reason = denyReason(scope, { level: 'department', departmentId });
     if (reason) return next(createError(reason, 403));
 
+    const requestedFacilityId = req.query.facility_id !== undefined ? Number(req.query.facility_id) : null;
+    if (requestedFacilityId !== null) {
+      const facilityReason = denyReason(scope, { level: 'facility', facilityId: requestedFacilityId });
+      if (facilityReason) return next(createError(facilityReason, 403));
+    }
+    const facilityId = scope.role === 'admin' ? requestedFacilityId : scope.facilityId;
+
     const [department] = query<{ id: number; name: string }>(
       'SELECT id, name FROM departments WHERE id = ?', [departmentId],
     );
     if (!department) return next(createError('Department not found', 404));
 
+    let facility: { id: number; name: string } | null = null;
+    if (facilityId !== null) {
+      [facility] = query<{ id: number; name: string }>(
+        'SELECT id, name FROM facilities WHERE id = ?', [facilityId],
+      );
+      if (!facility) return next(createError('Facility not found', 404));
+    }
+
     const f = parseFilters(req);
     const on = uarOnFilters(f);
+    const facilitySql = facility ? ' AND uar.facility_id = ?' : '';
+    const facilityParams: SqlValue[] = facility ? [facility.id] : [];
 
     // Per-user grid within the department. We show only users who actually
     // have responses; users with none have nothing to render.
@@ -302,21 +322,22 @@ router.get('/departments/:departmentId', (req: Request, res: Response, next: Nex
        INNER JOIN users u ON u.id = uar.user_id
        LEFT JOIN user_titles t ON t.id = u.title_id
        LEFT JOIN user_assessments ua ON ua.id = uar.user_assessment_id${uaOnFilter(f)}
-       WHERE uar.department_id = ?${on.sql}
+       WHERE uar.department_id = ?${facilitySql}${on.sql}
        GROUP BY u.id, u.first_name, u.last_name, u.user_name, t.name
        ORDER BY u.last_name, u.first_name`,
-      [departmentId, ...on.params],
+      [departmentId, ...facilityParams, ...on.params],
     );
 
     const whereParts: string[] = ['uar.department_id = ?'];
     const whereParams: SqlValue[] = [departmentId];
+    if (facility) { whereParts.push('uar.facility_id = ?'); whereParams.push(facility.id); }
     if (f.domainCode)      { whereParts.push('uar.domain_code = ?');      whereParams.push(f.domainCode); }
     if (f.competencyValue) { whereParts.push('uar.competency_value = ?'); whereParams.push(f.competencyValue); }
     // At department level every respondent is in the bucket already — no
     // separate "unassigned" concept. Zero out to keep the meta shape stable.
     const counts = respondentCounts('WHERE ' + whereParts.join(' AND '), whereParams, f, 'department_id');
 
-    res.json({ level: 'department', department, items, meta: meta(f, counts.total, 0) });
+    res.json({ level: 'department', department, facility, items, meta: meta(f, counts.total, 0) });
   } catch (err) { next(err); }
 });
 
