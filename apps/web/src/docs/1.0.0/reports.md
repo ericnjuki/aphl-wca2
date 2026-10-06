@@ -24,7 +24,7 @@ Drill down by **clicking a bar** in the stacked chart or **any row** in the brea
   regions. Department and individual reports are not available to them.
   Rows with only 1 or 2 respondents are shown as "Fewer than 3 respondents";
   if that leaves one hidden row in a list, another is hidden too ("Hidden for
-  privacy") so totals can't reveal it.
+  privacy") so a list's totals can't reveal it on their own.
 
 ## Filters (top bar)
 
