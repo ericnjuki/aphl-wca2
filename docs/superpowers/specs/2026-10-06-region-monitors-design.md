@@ -73,7 +73,7 @@ cleanup on user delete is needed.
 |---|---|
 | national | 403 |
 | region | allowed iff `regionId ∈ regionIds` |
-| district | allowed iff the district's current `region_id ∈ regionIds` (404 handling unchanged if the district doesn't exist) |
+| district | allowed iff the district's current `region_id ∈ regionIds` (an unknown district id is 403, same as for staff today — scope runs before the 404 lookup) |
 | facility | allowed iff the facility's current `region_id ∈ regionIds` |
 | department | **403 always** |
 | user (individual) | **403 always**, including their own id |
@@ -115,8 +115,8 @@ lives in one place.
   - `region_ids` non-empty for a non-monitor role.
 - `PUT` changing role from `monitor` to another role deletes the user's
   `user_regions` rows (invariant 3).
-- `GET /admin/users` adds `region_ids: number[]` and `region_names: string[]`
-  per user.
+- `GET /admin/users` (and the POST/PUT responses) add `region_ids: number[]` and
+  `regions: { id, name }[]` per user — the same shape as `/auth/me`.
 - `POST /admin/users/import` is unchanged; it only creates `staff`.
 
 `apps/api/src/routes/auth.ts`: the login response and `/auth/me` user object add
@@ -132,8 +132,8 @@ lives in one place.
   - exactly one region → `/reports/regions/:id`
   - several regions → a **"Your regions"** view: one card per region linking to
     its region report. No combined multi-region report.
-- Breadcrumbs: for monitors the "National" root crumb is replaced by
-  "Your regions" (multi-region) or omitted (single region).
+- Breadcrumbs: no change needed. The root crumb is "Reports" → `/reports`, which
+  for monitors already resolves to their single region or the "Your regions" view.
 
 ### Inside reports
 
@@ -160,7 +160,8 @@ and Docs.
 
 ### i18n and docs
 
-- New strings in every existing locale file.
+- Users and Reports pages are English-only today (no `t()` calls); new strings
+  there follow that. Menu labels are already translated keys and gain no new ones.
 - `docs/`: add a "Partner (monitor) users" section to the roles/setup docs,
   covering what monitors can and cannot see.
 
