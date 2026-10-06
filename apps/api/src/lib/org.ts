@@ -60,3 +60,20 @@ export function backfillResponseDistrict(facilityId: number, districtId: number)
     [districtId, district?.region_id ?? null, facilityId],
   );
 }
+
+/** Regions assigned to a partner (monitor) user — empty for everyone else. */
+export function getUserRegions(userId: number): { id: number; name: string }[] {
+  return query<{ id: number; name: string }>(
+    `SELECT r.id, r.name FROM user_regions ur JOIN regions r ON r.id = ur.region_id
+     WHERE ur.user_id = ? ORDER BY r.name`,
+    [userId],
+  );
+}
+
+/** Attach `regions` and `region_ids` to a user payload sent to the client. */
+export function withRegions<T extends { id: number }>(
+  user: T,
+): T & { regions: { id: number; name: string }[]; region_ids: number[] } {
+  const regions = getUserRegions(user.id);
+  return { ...user, regions, region_ids: regions.map((r) => r.id) };
+}
