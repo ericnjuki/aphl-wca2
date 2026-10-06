@@ -114,7 +114,8 @@ function removeEntity(tab: OrgTab, op: OrgOp): void {
 
 // ── Users ─────────────────────────────────────────────────────────────────────
 
-interface PreparedUser { op: UserOp; username: string; temp: string; hash: string }
+interface Secret { temp: string; hash: string }
+interface PreparedUser extends Secret { op: UserOp; username: string }
 
 function setRegions(userId: number, codes: string): void {
   execute('DELETE FROM user_regions WHERE user_id = ?', [userId]);
@@ -162,37 +163,74 @@ function writeUser(op: UserOp, prepared: PreparedUser | undefined): void {
 
 // ── Apply ─────────────────────────────────────────────────────────────────────
 
-export async function applySetupOps(ops: SetupOps): Promise<Credential[]> {
-  // Hash outside the transaction (bcrypt is async; transaction() is not).
-  const reserved = new Set<string>();
-  const prepared = new Map<UserOp, PreparedUser>();
+/** Temporary passwords and their bcrypt hashes for the new users, keyed by email. Async: do this first. */
+export async function prepareSecrets(ops: SetupOps): Promise<Map<string, Secret>> {
+  const secrets = new Map<string, Secret>();
   for (const op of ops.users) {
     if (op.kind !== 'add') continue;
-    const username = generateUsername(op.values.first_name, op.values.last_name, reserved);
-    reserved.add(username);
     const temp = generateTempPassword();
-    prepared.set(op, { op, username, temp, hash: await bcrypt.hash(temp, 12) });
+    secrets.set(op.values.email.toLowerCase(), { temp, hash: await bcrypt.hash(temp, 12) });
   }
+  return secrets;
+}
 
+const TEMP_VALUE = (id: number) => `__import_tmp_${id}`;
+
+/**
+ * Synchronous: no await between the caller's fingerprint check and these
+ * writes. Unique columns (departments.name, users national_id + id_type) are
+ * first parked on a temporary value for every row about to change, so renames
+ * and swaps cannot collide mid-way; deleted departments go first.
+ */
+export function applyPrepared(ops: SetupOps, secrets: Map<string, Secret>): Credential[] {
+  const prepared: PreparedUser[] = [];
   transaction(() => {
-    // Parents before children, then users, then removals children-first.
+    const reserved = new Set<string>();
+    for (const op of ops.users) {
+      if (op.kind !== 'add') continue;
+      const secret = secrets.get(op.values.email.toLowerCase());
+      if (!secret) throw new Error('Import apply: missing credentials for a new user');
+      const username = generateUsername(op.values.first_name, op.values.last_name, reserved);
+      reserved.add(username);
+      prepared.push({ op, username, ...secret });
+    }
+    const byOp = new Map(prepared.map((p) => [p.op, p]));
+
+    // Departments: free names before anything claims them.
+    const depts = ops.org[TAB.departments];
+    for (const op of depts.filter((o) => o.kind === 'delete')) removeEntity(TAB.departments, op);
+    for (const op of depts.filter((o) => o.kind === 'update' || o.kind === 'restore')) {
+      execute('UPDATE departments SET name = ? WHERE id = ?', [TEMP_VALUE(op.id as number), op.id]);
+    }
+    for (const op of ops.users.filter((o) => o.kind === 'update')) {
+      execute('UPDATE users SET national_id = ? WHERE id = ?', [TEMP_VALUE(op.id as number), op.id]);
+    }
+
+    // Parents before children, then users, then the remaining removals children-first.
     for (const op of ops.org[TAB.regions].filter(isUpsert)) upsertCodeName('regions', 'region_name', op, true);
     for (const op of ops.org[TAB.districts].filter(isUpsert)) upsertDistrict(op);
-    for (const op of ops.org[TAB.departments].filter(isUpsert)) upsertCodeName('departments', 'department_name', op, true);
+    for (const op of depts.filter(isUpsert)) upsertCodeName('departments', 'department_name', op, true);
     for (const op of ops.org[TAB.facilities].filter(isUpsert)) upsertFacility(op);
     for (const op of ops.org[TAB.orgRoles].filter(isUpsert)) upsertCodeName('org_roles', 'role_name', op, false);
     for (const op of ops.org[TAB.titles].filter(isUpsert)) upsertCodeName('user_titles', 'title_name', op, false);
-    for (const op of ops.users) writeUser(op, prepared.get(op));
+    for (const op of ops.users) writeUser(op, byOp.get(op));
     const removalOrder: OrgTab[] = [TAB.facilities, TAB.districts, TAB.regions, TAB.departments, TAB.orgRoles, TAB.titles];
     for (const tab of removalOrder) {
-      for (const op of ops.org[tab].filter((o) => !isUpsert(o))) removeEntity(tab, op);
+      for (const op of ops.org[tab].filter((o) => !isUpsert(o) && !(tab === TAB.departments && o.kind === 'delete'))) {
+        removeEntity(tab, op);
+      }
     }
   });
 
-  return [...prepared.values()].map((p) => ({
+  return prepared.map((p) => ({
     name: `${p.op.values.first_name} ${p.op.values.last_name}`,
     email: p.op.values.email.toLowerCase(),
     username: p.username,
     temp_password: p.temp,
   }));
+}
+
+/** Prepare secrets, then apply (for callers that have no fingerprint to re-check). */
+export async function applySetupOps(ops: SetupOps): Promise<Credential[]> {
+  return applyPrepared(ops, await prepareSecrets(ops));
 }

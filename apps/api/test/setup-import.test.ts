@@ -1,9 +1,10 @@
-import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import request from 'supertest';
 import bcrypt from 'bcryptjs';
 import { query, execute } from '../src/db/database';
 import { XLSX_MIME, MAX_WORKBOOK_BYTES } from '../src/lib/workbook/xlsx';
 import { applySetupOps } from '../src/lib/workbook/setup-apply';
+import { generateUsername } from '../src/lib/credentials';
 import {
   initTestDb, resetDb, testApp, asUser, createUser, createRegion, createDistrict, createFacility, createDepartment,
   addResponse, buildWorkbook, USERS_HEADER, userSheetRow,
@@ -204,6 +205,93 @@ describe('country setup import endpoints', () => {
     expect((await apply(buf, body.plan.fingerprint)).status).toBe(200);
     expect(query('SELECT is_enabled, password, user_name FROM users WHERE id = ?', [leaver]))
       .toEqual([{ is_enabled: 0, password: before.password, user_name: before.user_name }]);
+  });
+
+  it('refuses with 409 and writes nothing when the data changes while passwords are hashing', async () => {
+    const buf = await country();
+    const { body } = await preview(buf);
+    const realHash = bcrypt.hash.bind(bcrypt) as (...a: unknown[]) => Promise<string>;
+    const spy = vi.spyOn(bcrypt, 'hash').mockImplementation((async (...a: unknown[]) => {
+      if (!query('SELECT id FROM regions').length) createRegion('ARU', 'Arusha'); // another admin commits mid-apply
+      return realHash(...a);
+    }) as unknown as typeof bcrypt.hash);
+    const res = await apply(buf, body.plan.fingerprint);
+    spy.mockRestore();
+    expect(res.status).toBe(409);
+    expect(query('SELECT code FROM regions')).toEqual([{ code: 'ARU' }]);
+    expect(query('SELECT id FROM users')).toHaveLength(1);
+  });
+
+  it('answers a repeated apply of the same file with 409, not 500', async () => {
+    const buf = await country();
+    const { body } = await preview(buf);
+    expect((await apply(buf, body.plan.fingerprint)).status).toBe(200);
+    expect((await apply(buf, body.plan.fingerprint)).status).toBe(409);
+  });
+
+  it('applies a department code change that keeps the name', async () => {
+    createDepartment('LAB', 'Laboratory');
+    const buf = await buildWorkbook({ Departments: [['department_code', 'department_name'], ['LAB2', 'Laboratory']] });
+    const { body } = await preview(buf);
+    expect(body.plan.canApply).toBe(true);
+    expect((await apply(buf, body.plan.fingerprint)).status).toBe(200);
+    expect(query('SELECT code, name, archived_at FROM departments')).toEqual([{ code: 'LAB2', name: 'Laboratory', archived_at: null }]);
+  });
+
+  it('refuses, rather than failing, a department code change keeping the name of one that must be archived', async () => {
+    const dsm = createRegion('DSM', 'Dar es Salaam');
+    const tmk = createDistrict('TMK', 'Temeke', dsm);
+    const f1 = createFacility('F1', 'Hospital', { regionId: dsm, districtId: tmk });
+    const lab = createDepartment('LAB', 'Laboratory');
+    addResponse({ userId: createUser({ enabled: false }), facilityId: f1, regionId: dsm, districtId: tmk, departmentId: lab });
+    const buf = await buildWorkbook({ Departments: [['department_code', 'department_name'], ['LAB2', 'Laboratory']] });
+    const { body } = await preview(buf);
+    expect(body.plan.canApply).toBe(false);
+    expect(body.plan.tabs[2].errors[0].message).toContain('already used by department "LAB"');
+    expect((await apply(buf, body.plan.fingerprint)).status).toBe(422);
+  });
+
+  it('applies two departments swapping names', async () => {
+    createDepartment('A', 'Alpha');
+    createDepartment('B', 'Beta');
+    const buf = await buildWorkbook({ Departments: [['department_code', 'department_name'], ['A', 'Beta'], ['B', 'Alpha']] });
+    const { body } = await preview(buf);
+    expect(body.plan.canApply).toBe(true);
+    expect((await apply(buf, body.plan.fingerprint)).status).toBe(200);
+    expect(query('SELECT code, name FROM departments ORDER BY code')).toEqual([
+      { code: 'A', name: 'Beta' }, { code: 'B', name: 'Alpha' },
+    ]);
+  });
+
+  it('applies two users swapping national ids', async () => {
+    const u1 = createUser({ email: 'one@example.test', firstName: 'One', lastName: 'A', nationalId: '111', idType: 'NRC' });
+    const u2 = createUser({ email: 'two@example.test', firstName: 'Two', lastName: 'B', nationalId: '222', idType: 'NRC' });
+    const buf = await buildWorkbook({
+      Users: [
+        USERS_HEADER, userSheetRow(admin),
+        ['one@example.test', 'One', 'A', '222', 'NRC', 'staff', '', '', '', '', '', 'active'],
+        ['two@example.test', 'Two', 'B', '111', 'NRC', 'staff', '', '', '', '', '', 'active'],
+      ],
+    });
+    const { body } = await preview(buf);
+    expect(body.plan.canApply).toBe(true);
+    expect((await apply(buf, body.plan.fingerprint)).status).toBe(200);
+    expect(query('SELECT id, national_id FROM users WHERE id IN (?, ?) ORDER BY id', [u1, u2]))
+      .toEqual([{ id: u1, national_id: '222' }, { id: u2, national_id: '111' }]);
+  });
+
+  it('falls back to "user" for names with no usable characters', () => {
+    expect(generateUsername('!!', '??')).toBe('user');
+    expect(generateUsername('!!', '??', new Set(['user']))).toBe('user_2');
+  });
+
+  it('keeps apply and export admin-only', async () => {
+    const buf = await country();
+    const { body } = await preview(buf);
+    const staff = createUser();
+    expect((await apply(buf, body.plan.fingerprint, staff)).status).toBe(403);
+    expect((await request(app).get('/admin/setup/export').set(asUser(staff))).status).toBe(403);
+    expect(query('SELECT id FROM regions')).toHaveLength(0);
   });
 
   it('guards the endpoints', async () => {
