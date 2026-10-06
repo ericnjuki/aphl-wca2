@@ -3,6 +3,7 @@ import { query, execute } from '../db/database';
 import { requireAuth, requirePasswordChanged, requireAdmin } from '../middleware/auth';
 import { createError } from '../middleware/errorHandler';
 import { parseCsv } from '../lib/csv';
+import catalogueRouter from './assessments-catalogue';
 
 interface DomainRow extends Record<string, unknown> {
   id: number;
@@ -44,6 +45,10 @@ interface FootnoteRow extends Record<string, unknown> {
 const router = Router();
 
 router.use(requireAuth, requirePasswordChanged);
+
+// ── Catalogue workbook ────────────────────────────────────────────────────────
+
+router.use('/catalogue', catalogueRouter);
 
 // ── Domains ───────────────────────────────────────────────────────────────────
 
