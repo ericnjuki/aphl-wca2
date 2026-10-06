@@ -30,8 +30,10 @@ assessed themselves — for example an NGO partner supporting a project.
 - Partners see summary reports for their regions: the region, its districts and
   its facilities (including per-department totals).
 - Partners never open department or individual reports, and cannot take
-  assessments. Facility reports list results per department, so a small
-  department can effectively reflect one or two people.
+  assessments.
+- To protect individuals, any department, facility or district with only 1 or
+  2 respondents shows as "Fewer than 3 respondents" for partners — its results
+  are hidden on screen and in exports. Admins and staff still see the numbers.
 - Region, district and facility reports use each facility's **current** region:
   if a facility moves to another region, its past responses move with it.
 - Partners cannot open the national report.

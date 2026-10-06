@@ -13,6 +13,9 @@ export interface MaturityCounts {
   count_competent: number;
   count_proficient: number;
   count_expert: number;
+  // Partner view only: the bucket has 1–2 respondents, so the API blanked its
+  // counts (all zero, avg null) to protect those people. Absent otherwise.
+  suppressed?: boolean;
 }
 
 export interface ReportMeta {

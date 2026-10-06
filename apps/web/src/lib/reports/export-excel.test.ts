@@ -25,6 +25,21 @@ describe("buildWorkbook — districts", () => {
     expect(breakdown(buildWorkbook(r))[0]).toMatchObject({ District: "Temeke", Respondents: 2 });
   });
 
+  it("labels rows hidden for privacy instead of exporting zeros", () => {
+    const r: RegionReportResponse = {
+      level: "region", region: { id: 1, name: "Dar es Salaam" },
+      items: [{
+        district_id: 8, district_name: "Ilala", suppressed: true,
+        respondents: 0, total_responses: 0, avg_level: null,
+        count_na: 0, count_beginner: 0, count_competent: 0, count_proficient: 0, count_expert: 0,
+      }],
+      undistricted_facilities: [], meta,
+    };
+    expect(breakdown(buildWorkbook(r))[0]).toMatchObject({
+      District: "Ilala", Respondents: "Fewer than 3", Beginner: "", Expert: "", "N/A": "",
+    });
+  });
+
   it("district report breaks down by facility and is titled after the district", () => {
     const r: DistrictReportResponse = {
       level: "district",

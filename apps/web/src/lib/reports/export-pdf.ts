@@ -4,7 +4,7 @@
 import jsPDF from 'jspdf';
 import autoTable, { RowInput } from 'jspdf-autotable';
 import { toPng } from 'html-to-image';
-import type { AnyReport } from '@/types/reports';
+import type { AnyReport, MaturityCounts } from '@/types/reports';
 
 function titleFor(r: AnyReport): string {
   switch (r.level) {
@@ -17,6 +17,16 @@ function titleFor(r: AnyReport): string {
   }
 }
 
+// Respondents/Avg/level cells. Rows hidden for privacy (partner view, fewer
+// than 3 respondents) print a label rather than misleading zeros.
+function countCells(i: MaturityCounts): (string | number)[] {
+  if (i.suppressed) return ['Fewer than 3', '—', '—', '—', '—', '—', '—'];
+  return [
+    i.respondents, (i.avg_level ?? 0).toFixed(1),
+    i.count_beginner, i.count_competent, i.count_proficient, i.count_expert, i.count_na,
+  ];
+}
+
 function breakdownHeadRows(r: AnyReport): { head: string[][]; body: RowInput[] } {
   const levels = ['Beg', 'Com', 'Pro', 'Exp', 'N/A'];
   switch (r.level) {
@@ -24,32 +34,28 @@ function breakdownHeadRows(r: AnyReport): { head: string[][]; body: RowInput[] }
       return {
         head: [['Region', 'Respondents', 'Avg', ...levels]],
         body: r.items.map((i) => [
-          i.region_name, i.respondents, (i.avg_level ?? 0).toFixed(1),
-          i.count_beginner, i.count_competent, i.count_proficient, i.count_expert, i.count_na,
+          i.region_name, ...countCells(i),
         ]),
       };
     case 'region':
       return {
         head: [['District', 'Respondents', 'Avg', ...levels]],
         body: r.items.map((i) => [
-          i.district_name, i.respondents, (i.avg_level ?? 0).toFixed(1),
-          i.count_beginner, i.count_competent, i.count_proficient, i.count_expert, i.count_na,
+          i.district_name, ...countCells(i),
         ]),
       };
     case 'district':
       return {
         head: [['Facility', 'Respondents', 'Avg', ...levels]],
         body: r.items.map((i) => [
-          i.facility_name, i.respondents, (i.avg_level ?? 0).toFixed(1),
-          i.count_beginner, i.count_competent, i.count_proficient, i.count_expert, i.count_na,
+          i.facility_name, ...countCells(i),
         ]),
       };
     case 'facility':
       return {
         head: [['Department', 'Respondents', 'Avg', ...levels]],
         body: r.items.map((i) => [
-          i.department_name, i.respondents, (i.avg_level ?? 0).toFixed(1),
-          i.count_beginner, i.count_competent, i.count_proficient, i.count_expert, i.count_na,
+          i.department_name, ...countCells(i),
         ]),
       };
     case 'department':
