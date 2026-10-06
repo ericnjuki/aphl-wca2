@@ -7,6 +7,7 @@ export interface District {
   region_id: number;
   region_name: string | null;
   facility_count: number;
+  archived_at?: string | null;
 }
 
 /** Districts grouped under their region for grouped <Select>s. */
