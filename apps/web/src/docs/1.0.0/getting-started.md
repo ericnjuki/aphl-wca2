@@ -4,26 +4,19 @@ Welcome to **LabWorkforce** — a tool for running competency assessments across
 
 ## What it does
 
-At a high level, LabWorkforce lets you:
-
-1. **Define assessment domains** — groups of competencies with proficiency descriptors (Beginner → Expert), imported from CSV or created by hand.
+1. **Assessment domains** — groups of competencies with proficiency descriptors (Beginner → Expert). A full catalogue ships with the app and can be updated from an Excel workbook or edited by hand.
 2. **Collect self-assessments** — staff answer each competency on a 4-level scale (plus N/A) using the Survey page.
 3. **Review submissions** — an admin approves or rejects each completed assessment; only approved submissions count toward reports by default.
 4. **Analyse results** — drill down from National → Region → District → Facility → Department → Individual, with charts, stacked breakdowns, and PDF/Excel/CSV export.
 
 ## First-time setup (admins)
 
-If the database is brand new, follow these steps in order:
+1. **Sign in** with the built-in admin account and set your own password.
+2. **Setup → Get started** — export the country setup template, fill in regions, districts, facilities, departments, org roles, job titles and users, then import it. The preview shows every change before anything is saved. Keep your own admin account on the Users tab, and give every staff user a **facility** and **department**: responses snapshot them at completion time, so unassigned users don't roll up into regional reports. The **Setup** docs page lists the columns and rules; a [sample workbook](data/sample-country-setup.xlsx) shows a filled-in example.
+3. **Hand out credentials** — straight after the import, download the new users' usernames and temporary passwords (shown only once). Users change the password at first login. You can also add or edit users one at a time on the **Users** page.
+4. **Assessments** — the catalogue is already loaded. Review it on the **Assessments** page; use **Export catalogue / Import catalogue** for bulk changes.
 
-1. **Setup** — add reference data:
-   - Regions (geographic groupings)
-   - Districts (belong to a region)
-   - Facilities (belong to a district)
-   - Departments (linked to facilities)
-   - Org roles and user titles
-2. **Users** — create staff accounts and, **importantly**, assign each user a **Facility** and **Department**. Responses snapshot the user's facility/department at completion time — unassigned users' responses won't roll up into regional reports.
-3. **Assessments** — define at least one assessment domain and import its competency items (CSV). Optionally give each domain a **Purpose** and **Introduction** (shown on the survey Start page) and import **footnotes** for any marked terms.
-4. **Invite staff** — share their username + temporary password. They'll be prompted to set their own password on first login.
+To change the organisation later, export the setup, edit it and import it again — rows you remove are archived (or deleted when they have no history) and users you remove are disabled.
 
 ## Daily use (staff)
 

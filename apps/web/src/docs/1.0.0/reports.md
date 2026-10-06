@@ -54,7 +54,7 @@ Each stacked bar shows how many respondents landed in each level:
 
 If you see a yellow banner *"N respondents are not attributed to a region"*, it means those users completed assessments without a facility assignment, so their data doesn't flow into any regional bucket. Fix by editing their row on **Users** and setting a **Facility**. Note that existing unattributed rows stay unattributed — we snapshot org context at submission time so historical reports don't rewrite when someone transfers.
 
-On a **Region** report, the banner counts respondents whose facility has no district yet. Those facilities are listed under **Facilities without a district** so you can still open them. Assigning a district (Setup › Facilities, or a facilities CSV import) also attributes that facility's earlier responses to the district. Responses submitted before a facility or district moved region keep their original region, so they show as unassigned there rather than under the district.
+On a **Region** report, the banner counts respondents whose facility has no district yet. Those facilities are listed under **Facilities without a district** so you can still open them. Assigning a district (Setup › Facilities, or the country setup workbook) also attributes that facility's earlier responses to the district. Responses submitted before a facility or district moved region keep their original region, so they show as unassigned there rather than under the district.
 
 ## Export
 
@@ -69,3 +69,7 @@ Exports respect the current level, filters, and drill-down.
 ## Staff access
 
 Non-admin staff see reports **scoped to their own facility** only — they cannot open national or other-region views. They can also open the report for their own district. Their own `/reports/users/:me` always works.
+
+## Archived places
+
+A region, district, facility or department removed through the country setup workbook is archived when it has history. It still appears in reports — labelled "(archived)" — wherever it has respondents in the current view, so past results stay visible. Archived places without respondents in the view are left out.

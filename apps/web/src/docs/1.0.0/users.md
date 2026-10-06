@@ -41,23 +41,11 @@ assessed themselves — for example an NGO partner supporting a project.
 - Partners cannot open the national report.
 - A region can't be deleted while a partner is assigned to it — remove it from
   the partner first.
-- CSV import creates staff only; add partners from the form.
+- Partners can also be created in bulk with the country setup workbook (`system_role` = `monitor` plus `region_codes`).
 
-## Importing users from CSV
+## Importing users in bulk
 
-**Import CSV** opens a dialog. Required columns:
-
-```
-first_name,last_name,national_id,id_type,email
-```
-
-Optional columns:
-
-```
-facility_code,department_code,role_code,title_code
-```
-
-Codes map to the values you set up on the **Setup** page. Unknown codes fail the **whole** import (validate-all-before-write). After a successful import, you get a dialog showing every generated username + temp password — export this to CSV immediately and share with each staffer individually.
+Bulk import lives on the **Setup** page (**Bulk import on Setup** links there): the **Users** tab of the country setup workbook. Users are matched by email; existing users keep their username and password, new users get a generated username and a temporary password, and users missing from the tab are **disabled** (never deleted). The preview shows every change first, and the import will not disable or demote you. Right after the import, **Download credentials** gives you each new user's username and temporary password — the list is shown only once. The **Setup** docs page lists the columns and rules.
 
 ## Editing + resetting
 
