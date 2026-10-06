@@ -8,7 +8,7 @@ const counts: MaturityCounts = {
   count_na: 0, count_beginner: 0, count_competent: 2, count_proficient: 0, count_expert: 2,
 };
 const meta: ReportMeta = {
-  total_respondents: 2, unassigned_respondents: 0, generated_at: "2026-09-28T00:00:00Z",
+  total_respondents: 2, unassigned_respondents: 0, avg_level: null, generated_at: "2026-09-28T00:00:00Z",
   filters: { domain_code: null, competency_value: null, approved_only: true },
 };
 
@@ -25,11 +25,24 @@ describe("buildWorkbook — districts", () => {
     expect(breakdown(buildWorkbook(r))[0]).toMatchObject({ District: "Temeke", Respondents: 2 });
   });
 
+  it("labels complementary rows as hidden for privacy", () => {
+    const r: RegionReportResponse = {
+      level: "region", region: { id: 1, name: "Dar es Salaam" },
+      items: [{
+        district_id: 7, district_name: "Temeke", suppressed: "complementary",
+        respondents: 0, total_responses: 0, avg_level: null,
+        count_na: 0, count_beginner: 0, count_competent: 0, count_proficient: 0, count_expert: 0,
+      }],
+      undistricted_facilities: [], meta,
+    };
+    expect(breakdown(buildWorkbook(r))[0]).toMatchObject({ District: "Temeke", Respondents: "Hidden for privacy" });
+  });
+
   it("labels rows hidden for privacy instead of exporting zeros", () => {
     const r: RegionReportResponse = {
       level: "region", region: { id: 1, name: "Dar es Salaam" },
       items: [{
-        district_id: 8, district_name: "Ilala", suppressed: true,
+        district_id: 8, district_name: "Ilala", suppressed: "small",
         respondents: 0, total_responses: 0, avg_level: null,
         count_na: 0, count_beginner: 0, count_competent: 0, count_proficient: 0, count_expert: 0,
       }],

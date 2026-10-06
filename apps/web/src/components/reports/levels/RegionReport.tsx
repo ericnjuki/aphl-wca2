@@ -19,18 +19,14 @@ export function RegionReport({ regionId }: Props) {
   if (isPending) return <ChartSkeleton />;
   if (isError) return <div className="p-6 text-sm text-destructive">Error: {(error as Error).message}</div>;
 
-  const covered = data.items.filter((r) => r.respondents > 0).length;
-  const totalResp = data.items.reduce((s, r) => s + r.respondents, 0);
-  const avgLevel = totalResp > 0
-    ? data.items.reduce((s, r) => s + (r.avg_level ?? 0) * r.respondents, 0) / totalResp
-    : null;
+  const covered = data.items.filter((r) => r.respondents > 0 || !!r.suppressed).length;
 
   return (
     <div className="flex flex-col gap-4 p-4">
       <UnassignedBanner level="region" count={data.meta.unassigned_respondents} />
       <ReportKpiCards
         totalRespondents={data.meta.total_respondents}
-        avgLevel={avgLevel}
+        avgLevel={data.meta.avg_level}
         bucketsCovered={covered}
         bucketsLabel="districts"
       />
