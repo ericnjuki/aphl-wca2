@@ -16,9 +16,28 @@ Optional but highly recommended:
 - **Department** — same, for the department axis
 - **Org Role** and **Job Title** — for filterable reporting
 
-System role (`staff` vs `admin`) gates access to Reviews and the national-level report.
+System role (`staff`, `admin` or `monitor`) gates access to Reviews, the national-level report and the survey — see **Partner (monitor) users** below.
 
 When you save, the system generates a **temporary password** (visible in the table, with copy/reveal buttons). The new user will be asked to set their own password on first login.
+
+## Partner (monitor) users
+
+Use the **Partner (monitor)** role for people who monitor results but are not
+assessed themselves — for example an NGO partner supporting a project.
+
+- Pick one or more **Regions** instead of a facility. Facility, department, org
+  role and title are not used for partners.
+- Partners see summary reports for their regions: the region, its districts and
+  its facilities (including per-department totals).
+- Partners never open department or individual reports, and cannot take
+  assessments. Facility reports list results per department, so a small
+  department can effectively reflect one or two people.
+- Region, district and facility reports use each facility's **current** region:
+  if a facility moves to another region, its past responses move with it.
+- Partners cannot open the national report.
+- A region can't be deleted while a partner is assigned to it — remove it from
+  the partner first.
+- CSV import creates staff only; add partners from the form.
 
 ## Importing users from CSV
 

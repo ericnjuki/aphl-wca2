@@ -34,3 +34,15 @@ export function requireAdmin(req: Request, _res: Response, next: NextFunction): 
   }
   next();
 }
+
+/**
+ * Rejects partner (monitor) users — they observe reports and never take
+ * assessments. Must be used after requireAuth.
+ */
+export function denyMonitor(req: Request, _res: Response, next: NextFunction): void {
+  const rows = query<{ role: string }>('SELECT role FROM users WHERE id = ?', [req.session.userId!]);
+  if (rows[0]?.role === 'monitor') {
+    return next(createError('Partner users do not take assessments', 403));
+  }
+  next();
+}

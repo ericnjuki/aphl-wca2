@@ -4,6 +4,7 @@ import { query, execute } from '../db/database';
 import { requireAuth } from '../middleware/auth';
 import { strictLimiter } from '../middleware/rateLimiter';
 import { createError } from '../middleware/errorHandler';
+import { withRegions } from '../lib/org';
 
 interface UserRow extends Record<string, unknown> {
   id: number;
@@ -22,11 +23,11 @@ interface UserRow extends Record<string, unknown> {
 /** Strip sensitive fields before sending to the client. */
 function sanitiseUser(user: UserRow) {
   const { password: _, ...safe } = user;
-  return {
+  return withRegions({
     ...safe,
     is_first_login: Boolean(user.is_first_login),
     is_enabled: Boolean(user.is_enabled),
-  };
+  });
 }
 
 const router = Router();

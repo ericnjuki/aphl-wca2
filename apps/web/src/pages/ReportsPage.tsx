@@ -1,3 +1,5 @@
+import { MonitorRegions } from '@/components/reports/MonitorRegions';
+import { reportsLanding } from '@/lib/reports/landing';
 import { Navigate, useParams, useSearchParams } from 'react-router-dom';
 
 import { ContentLayout } from '@/components/admin-panel/content-layout';
@@ -42,19 +44,14 @@ function ReportsPage() {
     : regionId != null     ? 'region'
     : 'national';
 
-  // Staff cannot view the national report (denied by report-scope on the API).
-  // When they land on /reports, send them to their facility — or, if they
-  // have no facility, to their own individual report which is always allowed.
+  // Only admins may view the national report (enforced by report-scope on the
+  // API). Everyone else is redirected, or — partner users with several
+  // regions — shown a region picker.
   const user = useAuthStore((s) => s.user);
-  const redirectTarget =
-    level === 'national' && user && user.role !== 'admin'
-      ? (user.facility_id != null
-          ? `${baseUrl}reports/facilities/${user.facility_id}`
-          : `${baseUrl}reports/users/${user.id}`)
-      : null;
+  const { redirect: redirectTarget, showRegionPicker } = reportsLanding(user, level, baseUrl);
 
   // Fetch only the active level's data — other hooks stay disabled via null ids.
-  const national   = useNationalReport(redirectTarget == null);
+  const national   = useNationalReport(redirectTarget == null && !showRegionPicker);
   const region     = useRegionReport(regionId);
   const district   = useDistrictReport(districtId);
   const facility   = useFacilityReport(facilityId);
@@ -108,10 +105,11 @@ function ReportsPage() {
         <ReportFilterBar
           level={level}
           crumbs={crumbs}
-          rightSlot={<ExportMenu level={level} payload={exportPayload} />}
+          rightSlot={showRegionPicker ? undefined : <ExportMenu level={level} payload={exportPayload} />}
         />
         <div className="flex-1">
-          {level === 'national'   && <NationalReport />}
+          {level === 'national'   && !showRegionPicker && <NationalReport />}
+          {level === 'national'   && showRegionPicker  && <MonitorRegions regions={user?.regions ?? []} />}
           {level === 'region'     && regionId     != null && <RegionReport     regionId={regionId}     />}
           {level === 'district'   && districtId   != null && <DistrictReport   districtId={districtId}   />}
           {level === 'facility'   && facilityId   != null && <FacilityReport   facilityId={facilityId} />}

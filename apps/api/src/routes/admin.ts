@@ -7,7 +7,7 @@ import { requireAuth, requirePasswordChanged, requireAdmin } from '../middleware
 import { createError } from '../middleware/errorHandler';
 import districtsRouter from './admin-districts';
 import { parseCsv as parseCsvRfc } from '../lib/csv';
-import { resolveDistrict, backfillResponseDistrict } from '../lib/org';
+import { resolveDistrict, backfillResponseDistrict, withRegions } from '../lib/org';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -140,10 +140,12 @@ function makeCrudRouter(cfg: CrudConfig) {
 const regionsRouter = makeCrudRouter({
   table: 'regions',
   fields: ['code', 'name'],
-  // Invariant 4 — FKs aren't enforced, so check here.
+  // Invariant 4 — FKs aren't enforced, so check here. Partner users count too.
   beforeDelete: (id) => {
     const [{ n }] = query<{ n: number }>('SELECT COUNT(*) AS n FROM districts WHERE region_id = ?', [id]);
-    return n > 0 ? `${n} ${n === 1 ? 'district is' : 'districts are'} still assigned to this region` : null;
+    if (n > 0) return `${n} ${n === 1 ? 'district is' : 'districts are'} still assigned to this region`;
+    const [{ m }] = query<{ m: number }>('SELECT COUNT(*) AS m FROM user_regions WHERE region_id = ?', [id]);
+    return m > 0 ? `${m} partner ${m === 1 ? 'user is' : 'users are'} still assigned to this region` : null;
   },
 });
 
@@ -425,7 +427,42 @@ const USER_SELECT = `
 
 function sanitiseUser(u: UserRow & Record<string, unknown>) {
   const { password: _, ...safe } = u;
-  return { ...safe, is_first_login: Boolean(u.is_first_login), is_enabled: Boolean(u.is_enabled) };
+  return withRegions({ ...safe, id: u.id, is_first_login: Boolean(u.is_first_login), is_enabled: Boolean(u.is_enabled) });
+}
+
+// ── Partner (monitor) placement ───────────────────────────────────────────────
+// Monitors have no facility placement; they see reports for the regions in
+// user_regions. Only monitors may have rows there (FKs aren't enforced).
+
+type Placement = { facility_id: unknown; department_id: unknown; org_role_id: unknown; title_id: unknown };
+
+const USER_ROLES = ['staff', 'admin', 'monitor'];
+const ROLE_ERROR = 'role must be one of: staff, admin, monitor';
+
+function validatePlacement(
+  role: string, placement: Placement, rawRegionIds: unknown,
+): { regionIds: number[] } | { error: string } {
+  const ids = rawRegionIds ?? [];
+  if (!Array.isArray(ids) || !ids.every((v) => Number.isInteger(v)))
+    return { error: 'region_ids must be an array of region ids' };
+  if (role !== 'monitor')
+    return ids.length > 0 ? { error: 'Only partner (monitor) users can be assigned regions' } : { regionIds: [] };
+  if (Object.values(placement).some((v) => v != null))
+    return { error: 'Partner (monitor) users cannot have a facility, department, org role or title' };
+  const unique = [...new Set(ids as number[])];
+  if (unique.length === 0) return { error: 'Partner (monitor) users need at least one region' };
+  const found = query<{ id: number }>(
+    `SELECT id FROM regions WHERE id IN (${unique.map(() => '?').join(',')})`, unique,
+  );
+  if (found.length !== unique.length) return { error: 'Unknown region in region_ids' };
+  return { regionIds: unique };
+}
+
+function setUserRegions(userId: number, regionIds: number[]): void {
+  execute('DELETE FROM user_regions WHERE user_id = ?', [userId]);
+  for (const rid of regionIds) {
+    execute('INSERT INTO user_regions (user_id, region_id) VALUES (?, ?)', [userId, rid]);
+  }
 }
 
 usersRouter.get('/', requireAdmin, (_req, res: Response, next: NextFunction) => {
@@ -441,17 +478,26 @@ usersRouter.post('/', requireAdmin, async (req: Request, res: Response, next: Ne
             facility_id, department_id, org_role_id, title_id, role = 'staff' } = req.body as Partial<UserRow>;
     if (!first_name || !last_name || !national_id || !id_type || !email)
       return next(createError('first_name, last_name, national_id, id_type, email are required', 400));
+    if (!USER_ROLES.includes(role)) return next(createError(ROLE_ERROR, 400));
+    const placement = validatePlacement(
+      role, { facility_id, department_id, org_role_id, title_id }, (req.body as { region_ids?: unknown }).region_ids,
+    );
+    if ('error' in placement) return next(createError(placement.error, 400));
     const user_name = generateUsername(first_name, last_name);
     const temp = generateTempPassword();
     const hashed = await bcrypt.hash(temp, 12);
     try {
-      execute(
-        `INSERT INTO users (first_name, last_name, national_id, id_type, email, user_name, password,
-           role, facility_id, department_id, org_role_id, title_id, temp_password)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-        [first_name, last_name, national_id, id_type, email, user_name, hashed,
-         role, facility_id ?? null, department_id ?? null, org_role_id ?? null, title_id ?? null, temp],
-      );
+      transaction(() => {
+        execute(
+          `INSERT INTO users (first_name, last_name, national_id, id_type, email, user_name, password,
+             role, facility_id, department_id, org_role_id, title_id, temp_password)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+          [first_name, last_name, national_id, id_type, email, user_name, hashed,
+           role, facility_id ?? null, department_id ?? null, org_role_id ?? null, title_id ?? null, temp],
+        );
+        const [created] = query<{ id: number }>('SELECT id FROM users WHERE email = ?', [email]);
+        setUserRegions(created.id, placement.regionIds);
+      });
     } catch (e: unknown) {
       if (e instanceof Error && e.message.includes('UNIQUE'))
         return next(createError('A user with that email, national ID, or username already exists', 409));
@@ -474,15 +520,27 @@ usersRouter.put('/:id', requireAdmin, (req: Request, res: Response, next: NextFu
       org_role_id = existing.org_role_id, title_id = existing.title_id,
       is_enabled = existing.is_enabled,
     } = req.body as Partial<UserRow>;
+    // Omitted region_ids keep the current assignment while the user stays a monitor.
+    const sentRegionIds = (req.body as { region_ids?: unknown }).region_ids;
+    const regionInput = sentRegionIds !== undefined ? sentRegionIds
+      : role === 'monitor'
+        ? query<{ region_id: number }>('SELECT region_id FROM user_regions WHERE user_id = ?', [id]).map((r) => r.region_id)
+        : [];
+    if (!USER_ROLES.includes(role)) return next(createError(ROLE_ERROR, 400));
+    const placement = validatePlacement(role, { facility_id, department_id, org_role_id, title_id }, regionInput);
+    if ('error' in placement) return next(createError(placement.error, 400));
     try {
-      execute(
-        `UPDATE users SET first_name=?, last_name=?, email=?, role=?,
-           facility_id=?, department_id=?, org_role_id=?, title_id=?, is_enabled=?,
-           updated_at=datetime('now') WHERE id=?`,
-        [first_name, last_name, email, role,
-         facility_id ?? null, department_id ?? null, org_role_id ?? null, title_id ?? null,
-         is_enabled ? 1 : 0, id],
-      );
+      transaction(() => {
+        execute(
+          `UPDATE users SET first_name=?, last_name=?, email=?, role=?,
+             facility_id=?, department_id=?, org_role_id=?, title_id=?, is_enabled=?,
+             updated_at=datetime('now') WHERE id=?`,
+          [first_name, last_name, email, role,
+           facility_id ?? null, department_id ?? null, org_role_id ?? null, title_id ?? null,
+           is_enabled ? 1 : 0, id],
+        );
+        setUserRegions(id, placement.regionIds);
+      });
     } catch (e: unknown) {
       if (e instanceof Error && e.message.includes('UNIQUE'))
         return next(createError('That email is already in use', 409));

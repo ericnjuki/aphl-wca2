@@ -14,6 +14,9 @@ export interface AuthUser {
   id_type: string;
   facility_id: number | null;
   department_id: number | null;
+  /** Assigned regions — partner (monitor) users only; empty otherwise. */
+  regions: { id: number; name: string }[];
+  region_ids: number[];
   created_at: string;
   updated_at: string;
 }

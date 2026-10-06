@@ -26,3 +26,18 @@ describe('migration 9 — districts', () => {
     expect(idx).toHaveLength(1);
   });
 });
+
+describe('migration 10 — user_regions', () => {
+  beforeAll(initTestDb);
+
+  it('creates the user_regions link table', () => {
+    expect(columns('user_regions')).toEqual(['user_id', 'region_id']);
+  });
+
+  it('indexes user_regions by region', () => {
+    const idx = query<{ name: string }>(
+      "SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'idx_user_regions_region'",
+    );
+    expect(idx).toHaveLength(1);
+  });
+});

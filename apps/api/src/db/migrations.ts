@@ -277,6 +277,21 @@ const migrations: { id: number; sql: string }[] = [
       CREATE INDEX IF NOT EXISTS idx_uar_district ON user_assessment_responses(district_id, domain_code, competency_value);
     `,
   },
+  {
+    id: 10,
+    sql: `
+      -- Partner (monitor) users are scoped to one or more regions instead of a
+      -- facility. Foreign keys are not enforced — the admin API keeps this
+      -- table consistent (monitor-only rows, no dangling regions).
+
+      CREATE TABLE IF NOT EXISTS user_regions (
+        user_id   INTEGER NOT NULL REFERENCES users(id),
+        region_id INTEGER NOT NULL REFERENCES regions(id),
+        PRIMARY KEY (user_id, region_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_user_regions_region ON user_regions(region_id);
+    `,
+  },
 ];
 
 export async function runMigrations(db: Database): Promise<void> {

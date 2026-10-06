@@ -15,6 +15,14 @@ The Reports page aggregates approved assessment responses across the whole organ
 
 Drill down by **clicking a bar** in the stacked chart or **any row** in the breakdown table. The URL updates (`/reports/regions/:id`, `/reports/districts/:id`, `/reports/facilities/:id`, etc.) so your browser back button climbs back up.
 
+## Who can see what
+
+- **Admin** users see all six levels: national, region, district, facility, department, and individual.
+- **Staff** (non-admin) see their own region, district and facility, departments within their facility, and individuals in their facility. They cannot open the national report or other regions.
+- **Partner (monitor)** users land on their region (or a "Your regions" list if
+  they have several) and can drill down to districts and facilities in those
+  regions. Department and individual reports are not available to them.
+
 ## Filters (top bar)
 
 - **All domains / domain picker** — restrict to one assessment framework
