@@ -121,4 +121,51 @@ describe('small-group suppression for partner users', () => {
     const asAdmin = await get(`/reports/districts/${ila}`, admin);
     expect(asAdmin.body.meta.avg_level).toBeCloseTo(2.5);
   });
+
+  it('hides the average from partners when 1-2 unassigned respondents sit outside every row', async () => {
+    const f3 = createFacility('F3', 'Kinondoni Hospital', { regionId: dsm, districtId: tmk });
+    const a = createDepartment('AAA', 'Alpha', [f3]);
+    const resp = (departmentId: number | null, level: number) =>
+      addResponse({ userId: createUser({ facilityId: f3 }), facilityId: f3, regionId: dsm, districtId: tmk, departmentId, level });
+    resp(a, 2); resp(a, 3); resp(a, 4); // all rows visible
+    resp(null, 4);                      // one unassigned respondent
+    const asPartner = await get(`/reports/facilities/${f3}`, monitor);
+    expect(row(asPartner.body.items, 'department_id', a).suppressed).toBeUndefined();
+    expect(asPartner.body.meta.unassigned_respondents).toBe(1);
+    expect(asPartner.body.meta.avg_level).toBeNull();
+    const asAdmin = await get(`/reports/facilities/${f3}`, admin);
+    expect(asAdmin.body.meta.avg_level).toBeCloseTo(3.25);
+  });
+
+  it('rounds the partner average to 2 decimals', async () => {
+    // Laboratory 2,3,4 + Microbiology 1,4 + one more -> 3 decimals needed unrounded.
+    addResponse({ userId: createUser({ facilityId: f1 }), facilityId: f1, regionId: dsm, districtId: tmk, departmentId: xry, level: 1 });
+    addResponse({ userId: createUser({ facilityId: f1 }), facilityId: f1, regionId: dsm, districtId: tmk, departmentId: xry, level: 1 });
+    addResponse({ userId: createUser({ facilityId: f1 }), facilityId: f1, regionId: dsm, districtId: tmk, departmentId: xry, level: 2 });
+    // 14 + 4 = 18 over 8 = 2.25 ; add one more for a repeating decimal
+    addResponse({ userId: createUser({ facilityId: f1 }), facilityId: f1, regionId: dsm, districtId: tmk, departmentId: xry, level: 2 });
+    addResponse({ userId: createUser({ facilityId: f1 }), facilityId: f1, regionId: dsm, districtId: tmk, departmentId: xry, level: 2 });
+    addResponse({ userId: createUser({ facilityId: f1 }), facilityId: f1, regionId: dsm, districtId: tmk, departmentId: xry, level: 2 });
+    const res = await get(`/reports/facilities/${f1}`, monitor);
+    const avg = res.body.meta.avg_level as number;
+    expect(avg).not.toBeNull();
+    expect(Math.round(avg * 100) / 100).toBe(avg);
+    const asAdmin = await get(`/reports/facilities/${f1}`, admin);
+    expect(asAdmin.body.meta.avg_level).not.toBe(avg); // admin keeps full precision
+  });
+
+  it('breaks ties between equally sized rows by taking the first by name', async () => {
+    const f3 = createFacility('F3', 'Kinondoni Hospital', { regionId: dsm, districtId: tmk });
+    const a = createDepartment('AAA', 'Alpha', [f3]);
+    const b = createDepartment('BBB', 'Beta', [f3]);
+    const c = createDepartment('CCC', 'Gamma', [f3]);
+    const resp = (departmentId: number) =>
+      addResponse({ userId: createUser({ facilityId: f3 }), facilityId: f3, regionId: dsm, districtId: tmk, departmentId, level: 2 });
+    for (let i = 0; i < 3; i++) { resp(a); resp(b); }
+    resp(c);
+    const res = await get(`/reports/facilities/${f3}`, monitor);
+    expect(row(res.body.items, 'department_id', c).suppressed).toBe('small');
+    expect(row(res.body.items, 'department_id', a).suppressed).toBe('complementary');
+    expect(row(res.body.items, 'department_id', b).suppressed).toBeUndefined();
+  });
 });

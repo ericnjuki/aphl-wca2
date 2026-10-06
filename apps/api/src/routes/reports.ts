@@ -6,7 +6,7 @@
 //   approved_only?     default true — exclude rejected/pending submissions
 //
 // Response envelope:
-//   { level, items, meta: { total_respondents, generated_at, filters } }
+//   { level, items, meta: { total_respondents, unassigned_respondents, avg_level, generated_at, filters } }
 //
 // LEFT JOIN pattern: the response-row filters (domain/competency/approved)
 // live in the JOIN's ON clause so buckets with zero responses still appear
@@ -106,9 +106,15 @@ function suppressSmallGroups<T extends Record<string, unknown>>(scope: Scope, it
 
 // The view-wide average is hidden from partners when the view itself is a
 // small group (1-2 people), for the same reason rows are.
-function viewAvg(scope: Scope, counts: { total: number; avg: number | null }): number | null {
-  if (scope.role === 'monitor' && counts.total > 0 && counts.total < MIN_GROUP_SIZE) return null;
-  return counts.avg;
+// Respondents outside every row (unassigned) are in the average but in no row,
+// so 1-2 of them would also let a partner back out the rows' figures. Partners
+// get the average rounded to 2 decimals so response counts can't be recovered
+// from it.
+function viewAvg(scope: Scope, counts: { total: number; unassigned: number; avg: number | null }): number | null {
+  if (scope.role !== 'monitor') return counts.avg;
+  if (counts.total > 0 && counts.total < MIN_GROUP_SIZE) return null;
+  if (counts.unassigned > 0 && counts.unassigned < MIN_GROUP_SIZE) return null;
+  return counts.avg === null ? null : Math.round(counts.avg * 100) / 100;
 }
 
 function meta(f: CommonFilters, totalRespondents: number, unassigned: number, avgLevel: number | null = null) {
@@ -455,7 +461,7 @@ router.get('/users/:userId', (req: Request, res: Response, next: NextFunction) =
       user,
       items,
       subcompetencies,
-      meta: meta(f, 1, 0),
+      meta: meta(f, 1, 0, null),
     });
   } catch (err) { next(err); }
 });
