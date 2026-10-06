@@ -1,11 +1,12 @@
 import { StrictMode } from "react";
 import React from "react";
 import { createRoot } from "react-dom/client";
-import { createBrowserRouter, RouterProvider } from "react-router-dom";
+import { createBrowserRouter, Navigate, RouterProvider } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
 
 import "@/styles/index.css";
+import { useAuthStore } from "@/store/auth";
 import { Toaster } from "@/components/ui/sonner";
 
 import {
@@ -31,13 +32,19 @@ const sqliteClient = new SQLiteClient();
 const ENV = import.meta.env;
 const baseUrl = ENV.VITE_BASE_URL || "/";
 
+// Partner (monitor) users never take assessments — their home is Reports.
+function HomeRoute() {
+  const isMonitor = useAuthStore((s) => s.user?.role === "monitor");
+  return isMonitor ? <Navigate to={`${baseUrl}reports`} replace /> : <SurveyPage />;
+}
+
 const router = createBrowserRouter([
   {
     path: baseUrl,
     element: <LandingPage />,
     errorElement: <ErrorPage />,
     children: [
-      { path: baseUrl, element: <SurveyPage />, errorElement: <ErrorPage /> },
+      { path: baseUrl, element: <HomeRoute />, errorElement: <ErrorPage /> },
       { path: `${baseUrl}reports`, element: <ReportsPage />, errorElement: <ErrorPage /> },
       { path: `${baseUrl}reports/regions/:regionId`,         element: <ReportsPage />, errorElement: <ErrorPage /> },
       { path: `${baseUrl}reports/districts/:districtId`,     element: <ReportsPage />, errorElement: <ErrorPage /> },

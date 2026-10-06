@@ -1,4 +1,5 @@
 import { useNavigate } from 'react-router-dom';
+import { useAuthStore } from '@/store/auth';
 import { useFacilityReport } from '@/hooks/reports/useReportQueries';
 import { MaturityLegend } from '../MaturityLegend';
 import { MaturityStackedBar } from '../MaturityStackedBar';
@@ -14,6 +15,11 @@ interface Props { facilityId: number }
 
 export function FacilityReport({ facilityId }: Props) {
   const navigate = useNavigate();
+  // Partner users can't open department reports (they list named people).
+  const isMonitor = useAuthStore((s) => s.user?.role === 'monitor');
+  const openDepartment = isMonitor
+    ? undefined
+    : (key: string) => navigate(`${baseUrl}reports/departments/${key}`);
   const { data, isPending, isError, error } = useFacilityReport(facilityId);
 
   if (isPending) return <ChartSkeleton />;
@@ -46,14 +52,14 @@ export function FacilityReport({ facilityId }: Props) {
               label: r.department_name,
               ...r,
             }))}
-            onBarClick={(key) => navigate(`${baseUrl}reports/departments/${key}`)}
+            onBarClick={openDepartment}
             emptyText="No departments linked to this facility"
           />
         </div>
       </div>
       <MaturityBreakdownTable
         rows={data.items.map((r) => ({ key: String(r.department_id), label: r.department_name, ...r }))}
-        onRowClick={(key) => navigate(`${baseUrl}reports/departments/${key}`)}
+        onRowClick={openDepartment}
         labelHeader="Department"
       />
     </div>
