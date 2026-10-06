@@ -51,7 +51,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { api, downloadFile } from "@/lib/api";
 import { ImportWorkbookDialog } from "@/components/import/ImportWorkbookDialog";
-import { listKey, listPath, isArchived } from "@/lib/setup/archived";
+import { listKey, listPath, isArchived, ARCHIVED_HINT } from "@/lib/setup/archived";
 import { DistrictsTab } from "@/components/setup/DistrictsTab";
 import { groupDistrictsByRegion, type District } from "@/lib/setup/districts";
 
@@ -232,8 +232,8 @@ function SimpleTableTab<T extends SimpleRow>({
             ) : paged.map((row) => (
               <TableRow
                 key={row.id}
-                className={`cursor-pointer transition-colors hover:bg-[rgba(70,130,180,0.08)]${isArchived(row) ? " opacity-60" : ""}`}
-                onClick={() => { setEditing(row); setSheetOpen(true); }}
+                className={isArchived(row) ? "opacity-60" : "cursor-pointer transition-colors hover:bg-[rgba(70,130,180,0.08)]"}
+                onClick={isArchived(row) ? undefined : () => { setEditing(row); setSheetOpen(true); }}
               >
                 {cols.map((c) => (
                   <TableCell
@@ -242,21 +242,23 @@ function SimpleTableTab<T extends SimpleRow>({
                   >
                     {String(row[c.accessor] ?? "")}
                     {c.accessor === "name" && isArchived(row) && (
-                      <Badge variant="outline" className="ml-2 text-[10px]">Archived</Badge>
+                      <Badge variant="outline" className="ml-2 text-[10px]" title={ARCHIVED_HINT}>Archived</Badge>
                     )}
                   </TableCell>
                 ))}
                 <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
-                  <div className="flex justify-end gap-1">
-                    <Button size="icon" variant="ghost" className="h-7 w-7"
-                      onClick={() => { setEditing(row); setSheetOpen(true); }}>
-                      <Pencil className="h-3.5 w-3.5" />
-                    </Button>
-                    <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive hover:text-destructive"
-                      onClick={() => setDeleteId(row.id)}>
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
-                  </div>
+                  {!isArchived(row) && (
+                    <div className="flex justify-end gap-1">
+                      <Button size="icon" variant="ghost" className="h-7 w-7"
+                        onClick={() => { setEditing(row); setSheetOpen(true); }}>
+                        <Pencil className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive hover:text-destructive"
+                        onClick={() => setDeleteId(row.id)}>
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  )}
                 </TableCell>
               </TableRow>
             ))}
@@ -302,7 +304,6 @@ function SimpleTableTab<T extends SimpleRow>({
     </div>
   );
 }
-
 
 // ── Facilities tab (more complex — region + departments) ──────────────────────
 
@@ -454,27 +455,29 @@ function FacilitiesTab() {
             ) : pagedFacilities.map((f) => (
               <TableRow
                 key={f.id}
-                className={`cursor-pointer transition-colors hover:bg-[rgba(70,130,180,0.08)]${isArchived(f) ? " opacity-60" : ""}`}
-                onClick={() => openSheet(f)}
+                className={isArchived(f) ? "opacity-60" : "cursor-pointer transition-colors hover:bg-[rgba(70,130,180,0.08)]"}
+                onClick={isArchived(f) ? undefined : () => openSheet(f)}
               >
                 <TableCell className="font-mono text-xs text-muted-foreground">{f.code}</TableCell>
                 <TableCell className="text-sm">
                   {f.name}
-                  {isArchived(f) && <Badge variant="outline" className="ml-2 text-[10px]">Archived</Badge>}
+                  {isArchived(f) && <Badge variant="outline" className="ml-2 text-[10px]" title={ARCHIVED_HINT}>Archived</Badge>}
                 </TableCell>
                 <TableCell className="text-xs text-muted-foreground">{f.facility_type ?? "—"}</TableCell>
                 <TableCell className="text-xs text-muted-foreground">{f.district_name ?? "—"}</TableCell>
                 <TableCell className="text-xs text-muted-foreground">{f.region_name ?? "—"}</TableCell>
                 <TableCell className="font-mono text-xs">{f.department_ids.length}</TableCell>
                 <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
-                  <div className="flex justify-end gap-1">
-                    <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => openSheet(f)}>
-                      <Pencil className="h-3.5 w-3.5" />
-                    </Button>
-                    <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive hover:text-destructive" onClick={() => setDeleteId(f.id)}>
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
-                  </div>
+                  {!isArchived(f) && (
+                    <div className="flex justify-end gap-1">
+                      <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => openSheet(f)}>
+                        <Pencil className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive hover:text-destructive" onClick={() => setDeleteId(f.id)}>
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  )}
                 </TableCell>
               </TableRow>
             ))}
@@ -495,7 +498,6 @@ function FacilitiesTab() {
           </span>
         }
       />
-
 
       {/* Facility sheet */}
       <Sheet open={sheetOpen} onOpenChange={(v) => !v && setSheetOpen(false)}>
@@ -570,7 +572,6 @@ function FacilitiesTab() {
           </form>
         </SheetContent>
       </Sheet>
-
 
       <AlertDialog open={deleteId !== null} onOpenChange={(v) => !v && setDeleteId(null)}>
         <AlertDialogContent>
@@ -690,11 +691,11 @@ export default function SetupPage() {
   const [importOpen, setImportOpen] = useState(false);
   const [manual, setManual] = useState(false);
 
-  const { data: regions, isLoading } = useQuery({
+  const { data: regions, isSuccess } = useQuery({
     queryKey: ["admin", "regions"],
     queryFn: () => regionsFns.fetchFn(false),
   });
-  const showGetStarted = !manual && !isLoading && (regions ?? []).length === 0;
+  const showGetStarted = !manual && isSuccess && regions.length === 0;
 
   async function exportSetup() {
     const error = await downloadFile("/admin/setup/export", "country-setup.xlsx");

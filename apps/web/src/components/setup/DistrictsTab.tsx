@@ -19,7 +19,7 @@ import { TableFillerRow } from "@/components/ui/table-filler";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { api } from "@/lib/api";
 import type { District } from "@/lib/setup/districts";
-import { listKey, listPath, isArchived } from "@/lib/setup/archived";
+import { listKey, listPath, isArchived, ARCHIVED_HINT } from "@/lib/setup/archived";
 
 interface Region { id: number; code: string; name: string; }
 
@@ -140,25 +140,27 @@ export function DistrictsTab() {
             ) : paged.map((d) => (
               <TableRow
                 key={d.id}
-                className={`cursor-pointer transition-colors hover:bg-[rgba(70,130,180,0.08)]${isArchived(d) ? " opacity-60" : ""}`}
-                onClick={() => openSheet(d)}
+                className={isArchived(d) ? "opacity-60" : "cursor-pointer transition-colors hover:bg-[rgba(70,130,180,0.08)]"}
+                onClick={isArchived(d) ? undefined : () => openSheet(d)}
               >
                 <TableCell className="font-mono text-xs text-muted-foreground">{d.code}</TableCell>
                 <TableCell className="text-sm">
                   {d.name}
-                  {isArchived(d) && <Badge variant="outline" className="ml-2 text-[10px]">Archived</Badge>}
+                  {isArchived(d) && <Badge variant="outline" className="ml-2 text-[10px]" title={ARCHIVED_HINT}>Archived</Badge>}
                 </TableCell>
                 <TableCell className="text-xs text-muted-foreground">{d.region_name ?? "—"}</TableCell>
                 <TableCell className="font-mono text-xs">{d.facility_count}</TableCell>
                 <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
-                  <div className="flex justify-end gap-1">
-                    <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => openSheet(d)}>
-                      <Pencil className="h-3.5 w-3.5" />
-                    </Button>
-                    <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive hover:text-destructive" onClick={() => setDeleteId(d.id)}>
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
-                  </div>
+                  {!isArchived(d) && (
+                    <div className="flex justify-end gap-1">
+                      <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => openSheet(d)}>
+                        <Pencil className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive hover:text-destructive" onClick={() => setDeleteId(d.id)}>
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  )}
                 </TableCell>
               </TableRow>
             ))}
