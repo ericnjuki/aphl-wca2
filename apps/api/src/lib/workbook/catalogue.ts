@@ -34,6 +34,7 @@ const DOMAIN_FIELDS = ['domain_name', 'version', 'purpose', 'introduction'];
 export const ITEM_FIELDS = [
   'competency_value', 'competency_text', 'subcompetency_text', 'beginner', 'competent', 'proficient', 'expert', 'na',
 ];
+const UPDATABLE_ITEM_FIELDS = ITEM_FIELDS.filter((f) => f !== 'competency_value');
 
 export type ParsedCatalogue = Record<CatalogueTabName, ParsedTab | null>;
 
@@ -185,7 +186,15 @@ function planItems(parsed: ParsedTab | null, snap: CatalogueSnapshot, known: Set
       plan.changes.push({ row: r.row, key: label, kind: 'add', fields: diffFields({}, values, ITEM_FIELDS) });
       continue;
     }
-    const fields = diffFields(prev.values, values, ITEM_FIELDS);
+    // Past responses store competency_value as text, so it is fixed once an item exists.
+    if (values.competency_value !== prev.values.competency_value) {
+      plan.errors.push({
+        row: r.row, column: 'competency_value',
+        message: "competency_value can't change for an existing item — past responses use it",
+      });
+      continue;
+    }
+    const fields = diffFields(prev.values, values, UPDATABLE_ITEM_FIELDS);
     if (fields.length) {
       ops.push({ kind: 'update', id: prev.id, domainCode: code, subcompetency: sub, values });
       plan.changes.push({ row: r.row, key: label, kind: 'update', fields });
@@ -311,10 +320,10 @@ export function applyCatalogueOps(ops: CatalogueOps): void {
         );
       } else {
         execute(
-          `UPDATE assessment_items SET competency_value = ?, competency_text = ?, subcompetency_value = ?, subcompetency_text = ?,
+          `UPDATE assessment_items SET competency_text = ?, subcompetency_text = ?,
              beginner = ?, competent = ?, proficient = ?, expert = ?, na = ?, updated_at = datetime('now')
            WHERE id = ?`,
-          [...cols, op.id],
+          [v.competency_text, v.subcompetency_text, v.beginner, v.competent, v.proficient, v.expert, v.na, op.id],
         );
       }
     }

@@ -1,6 +1,7 @@
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import request from 'supertest';
 import { query, execute } from '../src/db/database';
+import { applyCatalogueOps } from '../src/lib/workbook/catalogue';
 import { XLSX_MIME, loadWorkbook } from '../src/lib/workbook/xlsx';
 import { initTestDb, resetDb, testApp, asUser, createUser, buildWorkbook, binaryParser } from './helpers';
 import type * as ExcelJS from 'exceljs';
@@ -155,5 +156,67 @@ describe('assessment catalogue workbook', () => {
     const { body } = await preview(buf);
     execute("UPDATE assessment_domains SET name = 'Renamed' WHERE code = 'LAB'");
     expect((await apply(buf, body.plan.fingerprint)).status).toBe(409);
+  });
+
+  it('rejects a changed competency_value on an existing item and writes nothing', async () => {
+    const row = item('LAB', '1.01');
+    row[1] = '2';
+    const buf = await buildWorkbook({ Items: [ITEMS, row] });
+    const { body } = await preview(buf);
+    expect(tab(body.plan, 'Items').errors).toEqual([
+      { row: 2, column: 'competency_value', message: "competency_value can't change for an existing item — past responses use it" },
+    ]);
+    expect(body.plan.canApply).toBe(false);
+    expect((await apply(buf, body.plan.fingerprint)).status).toBe(422);
+    expect(query("SELECT competency_value FROM assessment_items WHERE subcompetency_value = '1.01'")).toEqual([{ competency_value: '1' }]);
+  });
+
+  it('keeps row ids stable across an update', async () => {
+    const ids = () => ({
+      d: query('SELECT id, code FROM assessment_domains ORDER BY id'),
+      i: query('SELECT id, subcompetency_value FROM assessment_items ORDER BY id'),
+      f: query('SELECT id, symbol FROM assessment_footnotes ORDER BY id'),
+    });
+    const before = ids();
+    const buf = await buildWorkbook({
+      Domains: [DOMAINS, ['LAB', 'Renamed', '2', '', '']],
+      Items: [ITEMS, item('LAB', '1.02', 'Changed')],
+      Footnotes: [FOOTNOTES, ['LAB', '*', 'New definition', '']],
+    });
+    const { body } = await preview(buf);
+    expect((await apply(buf, body.plan.fingerprint)).status).toBe(200);
+    expect(ids()).toEqual(before);
+    expect(query("SELECT definition FROM assessment_footnotes")).toEqual([{ definition: 'New definition' }]);
+  });
+
+  it('rolls back earlier writes when a later op fails', () => {
+    expect(() => applyCatalogueOps({
+      domains: [{ kind: 'add', id: null, code: 'NEW', values: { domain_name: 'New', version: '1', purpose: '', introduction: '' } }],
+      items: [{ kind: 'add', id: null, domainCode: 'MISSING', subcompetency: '1.01', values: {} }],
+      footnotes: [],
+    })).toThrow();
+    expect(query("SELECT id FROM assessment_domains WHERE code = 'NEW'")).toEqual([]);
+  });
+
+  it('never removes when Domains and Footnotes tabs omit existing rows', async () => {
+    const buf = await buildWorkbook({
+      Domains: [DOMAINS, ['BIO', 'Bioinformatics', '1', '', '']],
+      Footnotes: [FOOTNOTES, ['BIO', '†', 'Dagger', '']],
+    });
+    const { body } = await preview(buf);
+    expect((await apply(buf, body.plan.fingerprint)).status).toBe(200);
+    expect(query('SELECT id FROM assessment_domains')).toHaveLength(2);
+    expect(query('SELECT id FROM assessment_items')).toHaveLength(2);
+    expect(query('SELECT id FROM assessment_footnotes')).toHaveLength(2);
+  });
+
+  it('guards apply: non-admin 403, missing fingerprint 400', async () => {
+    const staff = createUser();
+    const buf = await updated();
+    const res = await request(app).post('/assessments/catalogue/import/apply?fingerprint=x').set(asUser(staff))
+      .set('Content-Type', XLSX_MIME).send(buf);
+    expect(res.status).toBe(403);
+    expect((await request(app).post('/assessments/catalogue/import/apply').set(asUser(admin))
+      .set('Content-Type', XLSX_MIME).send(buf)).status).toBe(400);
   });
 });
