@@ -9,6 +9,7 @@ import { parseCsv as parseCsvRfc } from '../lib/csv';
 import { resolveDistrict, backfillResponseDistrict, withRegions } from '../lib/org';
 import { generateTempPassword, generateUsername } from '../lib/credentials';
 import setupRouter from './admin-setup';
+import { assertNoHistory, type HistoryTable } from '../lib/history';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -50,7 +51,7 @@ const includeArchived = (req: Request) =>
 // Keeps the reference-data routes DRY.  Each table only needs a small config.
 
 interface CrudConfig {
-  table: string;
+  table: HistoryTable;
   fields: string[];          // updatable fields (code always included)
   uniqueConflictField?: string; // field name to show in 409 message
   beforeDelete?: (id: number) => string | null; // non-null → 409 with that message
@@ -121,6 +122,7 @@ function makeCrudRouter(cfg: CrudConfig) {
       const id = Number(req.params.id);
       const [existing] = query(`SELECT id FROM ${table} WHERE id = ?`, [id]);
       if (!existing) return next(createError('Not found', 404));
+      assertNoHistory(table, id);
       const blocked = beforeDelete?.(id);
       if (blocked) return next(createError(blocked, 409));
       execute(`DELETE FROM ${table} WHERE id = ?`, [id]);
@@ -294,6 +296,7 @@ facilitiesRouter.delete('/:id', requireAdmin, (req: Request, res: Response, next
     const id = Number(req.params.id);
     const [existing] = query<FacilityRow>('SELECT id FROM facilities WHERE id = ?', [id]);
     if (!existing) return next(createError('Facility not found', 404));
+    assertNoHistory('facilities', id);
     execute('DELETE FROM facilities WHERE id = ?', [id]);
     res.json({ message: 'Deleted' });
   } catch (err) { next(err); }

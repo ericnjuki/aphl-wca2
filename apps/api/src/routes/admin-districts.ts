@@ -7,6 +7,7 @@ import { requireAdmin } from '../middleware/auth';
 import { createError } from '../middleware/errorHandler';
 import { parseCsv } from '../lib/csv';
 import { syncFacilitiesRegion } from '../lib/org';
+import { assertNoHistory } from '../lib/history';
 
 interface DistrictRow extends Record<string, unknown> {
   id: number; code: string; name: string; region_id: number;
@@ -93,6 +94,7 @@ router.delete('/:id', requireAdmin, (req: Request, res: Response, next: NextFunc
     const id = Number(req.params.id);
     const [existing] = query<DistrictRow>('SELECT id FROM districts WHERE id = ?', [id]);
     if (!existing) return next(createError('District not found', 404));
+    assertNoHistory('districts', id);
     const [{ n }] = query<{ n: number }>('SELECT COUNT(*) AS n FROM facilities WHERE district_id = ?', [id]);
     if (n > 0)
       return next(createError(`${plural(n, 'facility is', 'facilities are')} still assigned to this district`, 409));

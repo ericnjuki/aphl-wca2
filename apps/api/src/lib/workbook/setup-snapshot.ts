@@ -31,8 +31,8 @@ const txt = (v: unknown) => (v === null || v === undefined ? '' : String(v).trim
 // History = referenced by a response (regions … departments) or by any user,
 // enabled or not (org roles, titles). An entity with history is archived, not
 // deleted, when the workbook drops it.
-const responseHistory = (col: string) => `EXISTS (SELECT 1 FROM user_assessment_responses x WHERE x.${col} = t.id)`;
-const userHistory = (col: string) => `EXISTS (SELECT 1 FROM users x WHERE x.${col} = t.id)`;
+export const responseHistory = (col: string) => `EXISTS (SELECT 1 FROM user_assessment_responses x WHERE x.${col} = t.id)`;
+export const userHistory = (col: string) => `EXISTS (SELECT 1 FROM users x WHERE x.${col} = t.id)`;
 
 function entities(table: string, historySql: string): SnapEntity[] {
   return query<{ id: number; code: string; name: string; archived_at: string | null; has_history: number }>(
