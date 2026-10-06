@@ -120,5 +120,5 @@ export function isUncertainApplyFailure(status: number): boolean {
 }
 
 export const UNCERTAIN_APPLY_MESSAGE =
-  "The import may still have been applied. Preview the file again to check — if it shows no changes, it was applied; " +
+  "The import may still have been applied. Preview the file again to check â€” if it shows no changes, it was applied; " +
   "new users' temporary passwords are on the Users page.";
