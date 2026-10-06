@@ -29,8 +29,12 @@ assessed themselves — for example an NGO partner supporting a project.
   role and title are not used for partners.
 - Partners see summary reports for their regions: the region, its districts and
   its facilities (including per-department totals).
-- Partners never see the national report, department reports or any
-  individual's results, and cannot take assessments.
+- Partners never open department or individual reports, and cannot take
+  assessments. Facility reports list results per department, so a small
+  department can effectively reflect one or two people.
+- Region, district and facility reports use each facility's **current** region:
+  if a facility moves to another region, its past responses move with it.
+- Partners cannot open the national report.
 - A region can't be deleted while a partner is assigned to it — remove it from
   the partner first.
 - CSV import creates staff only; add partners from the form.
