@@ -1,5 +1,4 @@
 import { Router, Request, Response, NextFunction } from 'express';
-import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
 import { SqlValue } from 'sql.js';
 import { query, execute, transaction } from '../db/database';
@@ -8,6 +7,8 @@ import { createError } from '../middleware/errorHandler';
 import districtsRouter from './admin-districts';
 import { parseCsv as parseCsvRfc } from '../lib/csv';
 import { resolveDistrict, backfillResponseDistrict, withRegions } from '../lib/org';
+import { generateTempPassword, generateUsername } from '../lib/credentials';
+import setupRouter from './admin-setup';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -36,19 +37,6 @@ function parseCsv(text: string): { headers: string[]; rows: string[][] } {
   const headers = lines[0].replace(/^\uFEFF/, '').split(',').map((h) => h.trim());
   const rows = lines.slice(1).map((l) => l.split(',').map((v) => v.trim()));
   return { headers, rows };
-}
-
-function generateTempPassword(): string {
-  return crypto.randomBytes(8).toString('base64url').slice(0, 10);
-}
-
-function generateUsername(firstName: string, lastName: string): string {
-  const base = `${firstName.toLowerCase()}.${lastName.toLowerCase()}`.replace(/[^a-z0-9.]/g, '');
-  const existing = query<{ user_name: string }>('SELECT user_name FROM users WHERE user_name LIKE ?', [`${base}%`]);
-  if (!existing.length) return base;
-  let suffix = 2;
-  while (existing.some((r) => r.user_name === `${base}_${suffix}`)) suffix++;
-  return `${base}_${suffix}`;
 }
 
 // ── Generic CRUD factory ──────────────────────────────────────────────────────
@@ -704,6 +692,7 @@ router.use('/facilities',  facilitiesRouter);
 router.use('/org-roles',   orgRolesRouter);
 router.use('/user-titles', userTitlesRouter);
 router.use('/users',       usersRouter);
+router.use('/setup',       setupRouter);
 
 // ── Reviews (admin-only approval queue for completed submissions) ────────────
 
