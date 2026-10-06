@@ -13,9 +13,10 @@ export interface MaturityCounts {
   count_competent: number;
   count_proficient: number;
   count_expert: number;
-  // Partner view only: the bucket has 1–2 respondents, so the API blanked its
-  // counts (all zero, avg null) to protect those people. Absent otherwise.
-  suppressed?: boolean;
+  // Partner view only. 'small': the bucket has 1–2 respondents. 'complementary':
+  // hidden as well so a lone small bucket can't be recovered by subtraction.
+  // Counts are blanked (zero, avg null) by the API. Absent on visible rows.
+  suppressed?: 'small' | 'complementary';
 }
 
 export interface ReportMeta {
@@ -24,6 +25,10 @@ export interface ReportMeta {
   // on level) is NULL, so their data doesn't land in any bucket below.
   // Surfaced in the UI so users know why buckets look empty.
   unassigned_respondents: number;
+  // Average maturity over all respondents in the view (levels 1–4, N/A
+  // excluded). Null when there are none, or for partners when the view has
+  // only 1–2 respondents.
+  avg_level: number | null;
   generated_at: string;
   filters: {
     domain_code: string | null;

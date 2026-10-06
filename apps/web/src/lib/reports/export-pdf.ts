@@ -4,6 +4,7 @@
 import jsPDF from 'jspdf';
 import autoTable, { RowInput } from 'jspdf-autotable';
 import { toPng } from 'html-to-image';
+import { suppressionText } from './privacy';
 import type { AnyReport, MaturityCounts } from '@/types/reports';
 
 function titleFor(r: AnyReport): string {
@@ -20,7 +21,7 @@ function titleFor(r: AnyReport): string {
 // Respondents/Avg/level cells. Rows hidden for privacy (partner view, fewer
 // than 3 respondents) print a label rather than misleading zeros.
 function countCells(i: MaturityCounts): (string | number)[] {
-  if (i.suppressed) return ['Fewer than 3', '—', '—', '—', '—', '—', '—'];
+  if (i.suppressed) return [suppressionText(i.suppressed).export, '—', '—', '—', '—', '—', '—'];
   return [
     i.respondents, (i.avg_level ?? 0).toFixed(1),
     i.count_beginner, i.count_competent, i.count_proficient, i.count_expert, i.count_na,

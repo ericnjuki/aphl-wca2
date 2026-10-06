@@ -6,6 +6,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { suppressionText } from '@/lib/reports/privacy';
 import { formatAvgLevel } from '@/lib/reports/maturity';
 import type { MaturityCounts } from '@/types/reports';
 import { ChevronRight } from 'lucide-react';
@@ -70,12 +71,12 @@ export function MaturityBreakdownTable({
                 {r.label}
                 {r.suppressed && (
                   <span className="block text-[11px] font-normal text-muted-foreground">
-                    Fewer than 3 respondents — hidden for privacy
+                    {suppressionText(r.suppressed).note}
                   </span>
                 )}
               </TableCell>
               {metaHeader && <TableCell className="hidden md:table-cell text-xs text-muted-foreground">{r.meta ?? '—'}</TableCell>}
-              <TableCell className="text-right hidden md:table-cell font-mono text-xs">{r.suppressed ? '<3' : r.respondents}</TableCell>
+              <TableCell className="text-right hidden md:table-cell font-mono text-xs">{r.suppressed ? suppressionText(r.suppressed).count : r.respondents}</TableCell>
               <TableCell className="text-right hidden md:table-cell font-mono text-xs">{r.suppressed ? '—' : formatAvgLevel(r.avg_level)}</TableCell>
               <TableCell className="text-right font-mono text-xs">{r.suppressed ? '—' : r.count_beginner}</TableCell>
               <TableCell className="text-right font-mono text-xs">{r.suppressed ? '—' : r.count_competent}</TableCell>

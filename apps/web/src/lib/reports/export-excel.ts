@@ -2,6 +2,7 @@
 // Scope is intentionally narrow — 3 sheets max: Summary, Breakdown, Meta.
 
 import * as XLSX from 'xlsx';
+import { suppressionText } from './privacy';
 import type { AnyReport, MaturityCounts } from '@/types/reports';
 
 function titleFor(r: AnyReport): string {
@@ -20,7 +21,7 @@ function titleFor(r: AnyReport): string {
 function countColumns(i: MaturityCounts): Record<string, unknown> {
   if (i.suppressed) {
     return {
-      Respondents: 'Fewer than 3', 'Avg level': '',
+      Respondents: suppressionText(i.suppressed).export, 'Avg level': '',
       Beginner: '', Competent: '', Proficient: '', Expert: '', 'N/A': '',
     };
   }

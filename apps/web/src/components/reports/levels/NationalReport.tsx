@@ -20,10 +20,6 @@ export function NationalReport() {
   if (isError) return <div className="p-6 text-sm text-destructive">Error: {(error as Error).message}</div>;
 
   const coveredRegions = data.items.filter((r) => r.respondents > 0).length;
-  const avgLevel = data.meta.total_respondents > 0
-    ? data.items.reduce((s, r) => s + (r.avg_level ?? 0) * r.respondents, 0) /
-      Math.max(data.items.reduce((s, r) => s + r.respondents, 0), 1)
-    : null;
 
   if (data.meta.total_respondents === 0) {
     return (
@@ -46,7 +42,7 @@ export function NationalReport() {
       <UnassignedBanner level="national" count={data.meta.unassigned_respondents} />
       <ReportKpiCards
         totalRespondents={data.meta.total_respondents}
-        avgLevel={avgLevel}
+        avgLevel={data.meta.avg_level}
         bucketsCovered={coveredRegions}
         bucketsLabel="regions"
       />
