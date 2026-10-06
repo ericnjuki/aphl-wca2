@@ -19,7 +19,7 @@ export function DistrictReport({ districtId }: Props) {
   if (isPending) return <ChartSkeleton />;
   if (isError) return <div className="p-6 text-sm text-destructive">Error: {(error as Error).message}</div>;
 
-  const covered = data.items.filter((r) => r.respondents > 0).length;
+  const covered = data.items.filter((r) => r.respondents > 0 || !!r.suppressed).length;
 
   return (
     <div className="flex flex-col gap-4 p-4">
