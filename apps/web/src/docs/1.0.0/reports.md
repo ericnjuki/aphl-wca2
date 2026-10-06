@@ -22,6 +22,8 @@ Drill down by **clicking a bar** in the stacked chart or **any row** in the brea
 - **Partner (monitor)** users land on their region (or a "Your regions" list if
   they have several) and can drill down to districts and facilities in those
   regions. Department and individual reports are not available to them.
+  Rows with only 1 or 2 respondents are shown as "Fewer than 3 respondents"
+  with their results hidden.
 
 ## Filters (top bar)
 

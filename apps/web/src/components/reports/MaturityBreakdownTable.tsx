@@ -66,15 +66,22 @@ export function MaturityBreakdownTable({
                   : 'transition-colors'
               }
             >
-              <TableCell className="font-medium">{r.label}</TableCell>
+              <TableCell className="font-medium">
+                {r.label}
+                {r.suppressed && (
+                  <span className="block text-[11px] font-normal text-muted-foreground">
+                    Fewer than 3 respondents — hidden for privacy
+                  </span>
+                )}
+              </TableCell>
               {metaHeader && <TableCell className="hidden md:table-cell text-xs text-muted-foreground">{r.meta ?? '—'}</TableCell>}
-              <TableCell className="text-right hidden md:table-cell font-mono text-xs">{r.respondents}</TableCell>
-              <TableCell className="text-right hidden md:table-cell font-mono text-xs">{formatAvgLevel(r.avg_level)}</TableCell>
-              <TableCell className="text-right font-mono text-xs">{r.count_beginner}</TableCell>
-              <TableCell className="text-right font-mono text-xs">{r.count_competent}</TableCell>
-              <TableCell className="text-right font-mono text-xs">{r.count_proficient}</TableCell>
-              <TableCell className="text-right font-mono text-xs">{r.count_expert}</TableCell>
-              <TableCell className="text-right hidden sm:table-cell font-mono text-xs">{r.count_na}</TableCell>
+              <TableCell className="text-right hidden md:table-cell font-mono text-xs">{r.suppressed ? '<3' : r.respondents}</TableCell>
+              <TableCell className="text-right hidden md:table-cell font-mono text-xs">{r.suppressed ? '—' : formatAvgLevel(r.avg_level)}</TableCell>
+              <TableCell className="text-right font-mono text-xs">{r.suppressed ? '—' : r.count_beginner}</TableCell>
+              <TableCell className="text-right font-mono text-xs">{r.suppressed ? '—' : r.count_competent}</TableCell>
+              <TableCell className="text-right font-mono text-xs">{r.suppressed ? '—' : r.count_proficient}</TableCell>
+              <TableCell className="text-right font-mono text-xs">{r.suppressed ? '—' : r.count_expert}</TableCell>
+              <TableCell className="text-right hidden sm:table-cell font-mono text-xs">{r.suppressed ? '—' : r.count_na}</TableCell>
               {onRowClick && (
                 <TableCell className="text-muted-foreground">
                   <ChevronRight className="h-4 w-4" />

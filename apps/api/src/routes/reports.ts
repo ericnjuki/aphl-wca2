@@ -17,7 +17,7 @@ import { SqlValue } from 'sql.js';
 import { query } from '../db/database';
 import { requireAuth, requirePasswordChanged } from '../middleware/auth';
 import { createError } from '../middleware/errorHandler';
-import { getScope, denyReason } from '../lib/report-scope';
+import { getScope, denyReason, Scope } from '../lib/report-scope';
 
 const router = Router();
 router.use(requireAuth, requirePasswordChanged);
@@ -61,6 +61,23 @@ const COUNTS_SELECT = `
   SUM(CASE WHEN uar.response_level = 3 THEN 1 ELSE 0 END)                 AS count_proficient,
   SUM(CASE WHEN uar.response_level = 4 THEN 1 ELSE 0 END)                 AS count_expert
 `;
+
+// Partner (monitor) users see aggregates only. A bucket built from fewer than
+// MIN_GROUP_SIZE people would expose those people's results, so its counts
+// are blanked and the row is flagged `suppressed`. Empty buckets are left as-is.
+const MIN_GROUP_SIZE = 3;
+const BLANK_COUNTS = {
+  respondents: 0, total_responses: 0, avg_level: null,
+  count_na: 0, count_beginner: 0, count_competent: 0, count_proficient: 0, count_expert: 0,
+};
+
+function suppressSmallGroups<T extends Record<string, unknown>>(scope: Scope, items: T[]): T[] {
+  if (scope.role !== 'monitor') return items;
+  return items.map((item) => {
+    const n = Number(item.respondents ?? 0);
+    return n > 0 && n < MIN_GROUP_SIZE ? { ...item, ...BLANK_COUNTS, suppressed: true } : item;
+  });
+}
 
 function meta(f: CommonFilters, totalRespondents: number, unassigned: number) {
   return {
@@ -181,7 +198,7 @@ router.get('/regions/:regionId', (req: Request, res: Response, next: NextFunctio
       params: [regionId],
     });
 
-    res.json({ level: 'region', region, items, undistricted_facilities, meta: meta(f, counts.total, counts.unassigned) });
+    res.json({ level: 'region', region, items: suppressSmallGroups(scope, items), undistricted_facilities, meta: meta(f, counts.total, counts.unassigned) });
   } catch (err) { next(err); }
 });
 
@@ -223,7 +240,7 @@ router.get('/districts/:districtId', (req: Request, res: Response, next: NextFun
     // At district level, unassigned = respondents in this district with no facility_id.
     const counts = respondentCounts('WHERE ' + whereParts.join(' AND '), whereParams, f, 'facility_id');
 
-    res.json({ level: 'district', district, items, meta: meta(f, counts.total, counts.unassigned) });
+    res.json({ level: 'district', district, items: suppressSmallGroups(scope, items), meta: meta(f, counts.total, counts.unassigned) });
   } catch (err) { next(err); }
 });
 
@@ -272,7 +289,7 @@ router.get('/facilities/:facilityId', (req: Request, res: Response, next: NextFu
     // At facility level, unassigned = respondents in this facility with no department_id.
     const counts = respondentCounts('WHERE ' + whereParts.join(' AND '), whereParams, f, 'department_id');
 
-    res.json({ level: 'facility', facility, items, meta: meta(f, counts.total, counts.unassigned) });
+    res.json({ level: 'facility', facility, items: suppressSmallGroups(scope, items), meta: meta(f, counts.total, counts.unassigned) });
   } catch (err) { next(err); }
 });
 

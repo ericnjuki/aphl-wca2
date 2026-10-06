@@ -2,7 +2,7 @@
 // Scope is intentionally narrow — 3 sheets max: Summary, Breakdown, Meta.
 
 import * as XLSX from 'xlsx';
-import type { AnyReport } from '@/types/reports';
+import type { AnyReport, MaturityCounts } from '@/types/reports';
 
 function titleFor(r: AnyReport): string {
   switch (r.level) {
@@ -15,52 +15,50 @@ function titleFor(r: AnyReport): string {
   }
 }
 
+// Shared count columns. Rows hidden for privacy (partner view, fewer than 3
+// respondents) export as a label rather than misleading zeros.
+function countColumns(i: MaturityCounts): Record<string, unknown> {
+  if (i.suppressed) {
+    return {
+      Respondents: 'Fewer than 3', 'Avg level': '',
+      Beginner: '', Competent: '', Proficient: '', Expert: '', 'N/A': '',
+    };
+  }
+  return {
+    Respondents: i.respondents,
+    'Avg level': i.avg_level ?? '',
+    Beginner: i.count_beginner, Competent: i.count_competent,
+    Proficient: i.count_proficient, Expert: i.count_expert,
+    'N/A': i.count_na,
+  };
+}
+
 function breakdownRows(r: AnyReport): Record<string, unknown>[] {
   switch (r.level) {
     case 'national':
       return r.items.map((i) => ({
         Region: i.region_name,
-        Respondents: i.respondents,
-        'Avg level': i.avg_level ?? '',
-        Beginner: i.count_beginner, Competent: i.count_competent,
-        Proficient: i.count_proficient, Expert: i.count_expert,
-        'N/A': i.count_na,
+        ...countColumns(i),
       }));
     case 'region':
       return r.items.map((i) => ({
         District: i.district_name,
-        Respondents: i.respondents,
-        'Avg level': i.avg_level ?? '',
-        Beginner: i.count_beginner, Competent: i.count_competent,
-        Proficient: i.count_proficient, Expert: i.count_expert,
-        'N/A': i.count_na,
+        ...countColumns(i),
       }));
     case 'district':
       return r.items.map((i) => ({
         Facility: i.facility_name,
-        Respondents: i.respondents,
-        'Avg level': i.avg_level ?? '',
-        Beginner: i.count_beginner, Competent: i.count_competent,
-        Proficient: i.count_proficient, Expert: i.count_expert,
-        'N/A': i.count_na,
+        ...countColumns(i),
       }));
     case 'facility':
       return r.items.map((i) => ({
         Department: i.department_name,
-        Respondents: i.respondents,
-        'Avg level': i.avg_level ?? '',
-        Beginner: i.count_beginner, Competent: i.count_competent,
-        Proficient: i.count_proficient, Expert: i.count_expert,
-        'N/A': i.count_na,
+        ...countColumns(i),
       }));
     case 'department':
       return r.items.map((i) => ({
         Person: i.full_name, Title: i.title_name ?? '',
-        Respondents: i.respondents,
-        'Avg level': i.avg_level ?? '',
-        Beginner: i.count_beginner, Competent: i.count_competent,
-        Proficient: i.count_proficient, Expert: i.count_expert,
-        'N/A': i.count_na,
+        ...countColumns(i),
       }));
     case 'individual':
       return r.items.map((i) => ({
