@@ -24,13 +24,16 @@ function regionExists(raw: unknown): number | null {
   return row ? row.id : null;
 }
 
-router.get('/', (_req, res: Response, next: NextFunction) => {
+// Active districts unless ?include_archived=1; facility_count counts active facilities.
+router.get('/', (req: Request, res: Response, next: NextFunction) => {
   try {
+    const all = req.query.include_archived === '1' || req.query.include_archived === 'true';
     const districts = query(`
       SELECT d.*, r.name AS region_name, COUNT(f.id) AS facility_count
       FROM districts d
       LEFT JOIN regions r    ON r.id = d.region_id
-      LEFT JOIN facilities f ON f.district_id = d.id
+      LEFT JOIN facilities f ON f.district_id = d.id AND f.archived_at IS NULL
+      ${all ? '' : 'WHERE d.archived_at IS NULL'}
       GROUP BY d.id
       ORDER BY r.name ASC, d.name ASC
     `);

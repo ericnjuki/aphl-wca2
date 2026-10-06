@@ -39,6 +39,13 @@ function parseCsv(text: string): { headers: string[]; rows: string[][] } {
   return { headers, rows };
 }
 
+// ── Archived rows ─────────────────────────────────────────────────────────────
+// Lists (and so every picker) show active rows; ?include_archived=1 adds the
+// archived ones for the Setup tables' "Show archived" toggle.
+
+const includeArchived = (req: Request) =>
+  req.query.include_archived === '1' || req.query.include_archived === 'true';
+
 // ── Generic CRUD factory ──────────────────────────────────────────────────────
 // Keeps the reference-data routes DRY.  Each table only needs a small config.
 
@@ -54,10 +61,11 @@ function makeCrudRouter(cfg: CrudConfig) {
   const { table, fields, beforeDelete } = cfg;
   const allFields = [...new Set(['code', 'name', ...fields])];
 
-  // LIST
-  r.get('/', (_req, res: Response, next: NextFunction) => {
+  // LIST — active rows unless ?include_archived=1
+  r.get('/', (req: Request, res: Response, next: NextFunction) => {
     try {
-      res.json({ [table]: query(`SELECT * FROM ${table} ORDER BY name ASC`) });
+      const where = includeArchived(req) ? '' : 'WHERE archived_at IS NULL';
+      res.json({ [table]: query(`SELECT * FROM ${table} ${where} ORDER BY name ASC`) });
     } catch (err) { next(err); }
   });
 
@@ -186,8 +194,9 @@ departmentsRouter.post('/import', requireAdmin, (req: Request, res: Response, ne
 const facilitiesRouter = Router();
 facilitiesRouter.use(requireAuth, requirePasswordChanged);
 
-facilitiesRouter.get('/', (_req, res: Response, next: NextFunction) => {
+facilitiesRouter.get('/', (req: Request, res: Response, next: NextFunction) => {
   try {
+    const where = includeArchived(req) ? '' : 'WHERE f.archived_at IS NULL';
     const facilities = query<FacilityRow & { region_name: string | null; district_name: string | null; department_ids: string | null }>(`
       SELECT f.*,
              r.name AS region_name,
@@ -197,6 +206,7 @@ facilitiesRouter.get('/', (_req, res: Response, next: NextFunction) => {
       LEFT JOIN regions r   ON r.id = f.region_id
       LEFT JOIN districts d ON d.id = f.district_id
       LEFT JOIN facility_departments fd ON fd.facility_id = f.id
+      ${where}
       GROUP BY f.id
       ORDER BY f.name ASC
     `);

@@ -17,6 +17,9 @@ export interface MaturityCounts {
   // hidden as well so a lone small bucket can't be recovered by subtraction.
   // Counts are blanked (zero, avg null) by the API. Absent on visible rows.
   suppressed?: 'small' | 'complementary';
+  // An archived region/district/facility/department listed because it still
+  // has respondents in this view. Absent on active rows.
+  archived?: boolean;
 }
 
 export interface ReportMeta {

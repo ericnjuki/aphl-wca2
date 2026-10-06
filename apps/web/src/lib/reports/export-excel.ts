@@ -4,6 +4,7 @@
 import * as XLSX from 'xlsx';
 import { suppressionText } from './privacy';
 import type { AnyReport, MaturityCounts } from '@/types/reports';
+import { archivedLabel } from './archived';
 
 function titleFor(r: AnyReport): string {
   switch (r.level) {
@@ -39,22 +40,22 @@ function breakdownRows(r: AnyReport): Record<string, unknown>[] {
   switch (r.level) {
     case 'national':
       return r.items.map((i) => ({
-        Region: i.region_name,
+        Region: archivedLabel(i.region_name, i.archived),
         ...countColumns(i),
       }));
     case 'region':
       return r.items.map((i) => ({
-        District: i.district_name,
+        District: archivedLabel(i.district_name, i.archived),
         ...countColumns(i),
       }));
     case 'district':
       return r.items.map((i) => ({
-        Facility: i.facility_name,
+        Facility: archivedLabel(i.facility_name, i.archived),
         ...countColumns(i),
       }));
     case 'facility':
       return r.items.map((i) => ({
-        Department: i.department_name,
+        Department: archivedLabel(i.department_name, i.archived),
         ...countColumns(i),
       }));
     case 'department':

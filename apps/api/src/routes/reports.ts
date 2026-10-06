@@ -117,6 +117,18 @@ function viewAvg(scope: Scope, counts: { total: number; unassigned: number; avg:
   return counts.avg === null ? null : Math.round(counts.avg * 100) / 100;
 }
 
+// ── Archived children ─────────────────────────────────────────────────────────
+// An archived region/district/facility/department stays in a list only while
+// it has respondents in the current view, flagged `archived: true` so the UI
+// can label it. `archived_at` itself is not sent.
+function withArchived(items: Record<string, unknown>[]): Record<string, unknown>[] {
+  return items.flatMap((item) => {
+    const { archived_at: archivedAt, ...rest } = item;
+    if (archivedAt === null || archivedAt === undefined) return [rest];
+    return Number(rest.respondents ?? 0) > 0 ? [{ ...rest, archived: true }] : [];
+  });
+}
+
 function meta(f: CommonFilters, totalRespondents: number, unassigned: number, avgLevel: number | null = null) {
   return {
     total_respondents: totalRespondents,
@@ -170,11 +182,11 @@ router.get('/national', (req: Request, res: Response, next: NextFunction) => {
     const on = uarOnFilters(f);
 
     const items = query(
-      `SELECT r.id AS region_id, r.name AS region_name, ${COUNTS_SELECT}
+      `SELECT r.id AS region_id, r.name AS region_name, r.archived_at, ${COUNTS_SELECT}
        FROM regions r
        LEFT JOIN user_assessment_responses uar ON uar.region_id = r.id${on.sql}
        LEFT JOIN user_assessments ua ON ua.id = uar.user_assessment_id${uaOnFilter(f)}
-       GROUP BY r.id, r.name
+       GROUP BY r.id, r.name, r.archived_at
        ORDER BY r.name`,
       on.params,
     );
@@ -187,7 +199,7 @@ router.get('/national', (req: Request, res: Response, next: NextFunction) => {
     // At national level, "unassigned" = no region_id → not in any regional bucket.
     const counts = respondentCounts(whereSql, whereParams, f, 'region_id');
 
-    res.json({ level: 'national', items, meta: meta(f, counts.total, counts.unassigned, viewAvg(scope, counts)) });
+    res.json({ level: 'national', items: withArchived(items), meta: meta(f, counts.total, counts.unassigned, viewAvg(scope, counts)) });
   } catch (err) { next(err); }
 });
 
@@ -208,20 +220,20 @@ router.get('/regions/:regionId', (req: Request, res: Response, next: NextFunctio
     const on = uarOnFilters(f);
 
     const items = query(
-      `SELECT d.id AS district_id, d.name AS district_name, ${COUNTS_SELECT}
+      `SELECT d.id AS district_id, d.name AS district_name, d.archived_at, ${COUNTS_SELECT}
        FROM districts d
        LEFT JOIN user_assessment_responses uar
               ON uar.district_id = d.id AND uar.region_id = d.region_id${on.sql}
        LEFT JOIN user_assessments ua ON ua.id = uar.user_assessment_id${uaOnFilter(f)}
        WHERE d.region_id = ?
-       GROUP BY d.id, d.name
+       GROUP BY d.id, d.name, d.archived_at
        ORDER BY d.name`,
       [...on.params, regionId],
     );
 
     // Facilities not yet placed in a district — surfaced so they stay reachable.
     const undistricted_facilities = query<{ id: number; name: string }>(
-      'SELECT id, name FROM facilities WHERE region_id = ? AND district_id IS NULL ORDER BY name',
+      'SELECT id, name FROM facilities WHERE region_id = ? AND district_id IS NULL AND archived_at IS NULL ORDER BY name',
       [regionId],
     );
 
@@ -238,7 +250,7 @@ router.get('/regions/:regionId', (req: Request, res: Response, next: NextFunctio
       params: [regionId],
     });
 
-    res.json({ level: 'region', region, items: suppressSmallGroups(scope, items), undistricted_facilities, meta: meta(f, counts.total, counts.unassigned, viewAvg(scope, counts)) });
+    res.json({ level: 'region', region, items: suppressSmallGroups(scope, withArchived(items)), undistricted_facilities, meta: meta(f, counts.total, counts.unassigned, viewAvg(scope, counts)) });
   } catch (err) { next(err); }
 });
 
@@ -262,13 +274,13 @@ router.get('/districts/:districtId', (req: Request, res: Response, next: NextFun
     const on = uarOnFilters(f);
 
     const items = query(
-      `SELECT fa.id AS facility_id, fa.name AS facility_name, ${COUNTS_SELECT}
+      `SELECT fa.id AS facility_id, fa.name AS facility_name, fa.archived_at, ${COUNTS_SELECT}
        FROM facilities fa
        LEFT JOIN user_assessment_responses uar
               ON uar.facility_id = fa.id${on.sql}
        LEFT JOIN user_assessments ua ON ua.id = uar.user_assessment_id${uaOnFilter(f)}
        WHERE fa.district_id = ?
-       GROUP BY fa.id, fa.name
+       GROUP BY fa.id, fa.name, fa.archived_at
        ORDER BY fa.name`,
       [...on.params, districtId],
     );
@@ -280,7 +292,7 @@ router.get('/districts/:districtId', (req: Request, res: Response, next: NextFun
     // At district level, unassigned = respondents in this district with no facility_id.
     const counts = respondentCounts('WHERE ' + whereParts.join(' AND '), whereParams, f, 'facility_id');
 
-    res.json({ level: 'district', district, items: suppressSmallGroups(scope, items), meta: meta(f, counts.total, counts.unassigned, viewAvg(scope, counts)) });
+    res.json({ level: 'district', district, items: suppressSmallGroups(scope, withArchived(items)), meta: meta(f, counts.total, counts.unassigned, viewAvg(scope, counts)) });
   } catch (err) { next(err); }
 });
 
@@ -308,16 +320,18 @@ router.get('/facilities/:facilityId', (req: Request, res: Response, next: NextFu
     const f = parseFilters(req);
     const on = uarOnFilters(f);
 
-    // INNER JOIN facility_departments ensures we list every dept owned by the
-    // facility (even empty ones); LEFT JOIN responses so zero-response depts stay.
+    // Every department linked to the facility (even empty ones), plus archived
+    // departments — linked or not — that still have responses here (withArchived
+    // drops the empty archived ones). LEFT JOIN responses keeps zero-response rows.
     const items = query(
-      `SELECT d.id AS department_id, d.name AS department_name, ${COUNTS_SELECT}
+      `SELECT d.id AS department_id, d.name AS department_name, d.archived_at, ${COUNTS_SELECT}
        FROM departments d
-       INNER JOIN facility_departments fd ON fd.department_id = d.id AND fd.facility_id = ?
+       LEFT JOIN facility_departments fd ON fd.department_id = d.id AND fd.facility_id = ?
        LEFT JOIN user_assessment_responses uar
               ON uar.department_id = d.id AND uar.facility_id = ?${on.sql}
        LEFT JOIN user_assessments ua ON ua.id = uar.user_assessment_id${uaOnFilter(f)}
-       GROUP BY d.id, d.name
+       WHERE fd.facility_id IS NOT NULL OR d.archived_at IS NOT NULL
+       GROUP BY d.id, d.name, d.archived_at
        ORDER BY d.name`,
       [facilityId, facilityId, ...on.params],
     );
@@ -329,7 +343,7 @@ router.get('/facilities/:facilityId', (req: Request, res: Response, next: NextFu
     // At facility level, unassigned = respondents in this facility with no department_id.
     const counts = respondentCounts('WHERE ' + whereParts.join(' AND '), whereParams, f, 'department_id');
 
-    res.json({ level: 'facility', facility, items: suppressSmallGroups(scope, items), meta: meta(f, counts.total, counts.unassigned, viewAvg(scope, counts)) });
+    res.json({ level: 'facility', facility, items: suppressSmallGroups(scope, withArchived(items)), meta: meta(f, counts.total, counts.unassigned, viewAvg(scope, counts)) });
   } catch (err) { next(err); }
 });
 

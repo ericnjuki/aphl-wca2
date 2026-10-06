@@ -6,6 +6,7 @@ import { MaturityBreakdownTable } from '../MaturityBreakdownTable';
 import { ChartSkeleton } from '../ChartSkeleton';
 import { ReportKpiCards } from '../ReportKpiCards';
 import { UnassignedBanner } from '../UnassignedBanner';
+import { archivedLabel } from '@/lib/reports/archived';
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from '@/components/ui/empty';
 import { FileText } from 'lucide-react';
 
@@ -55,7 +56,7 @@ export function NationalReport() {
           <MaturityStackedBar
             data={data.items.map((r) => ({
               key: String(r.region_id),
-              label: r.region_name,
+              label: archivedLabel(r.region_name, r.archived),
               ...r,
             }))}
             onBarClick={(key) => navigate(`${baseUrl}reports/regions/${key}`)}
@@ -64,7 +65,7 @@ export function NationalReport() {
         </div>
       </div>
       <MaturityBreakdownTable
-        rows={data.items.map((r) => ({ key: String(r.region_id), label: r.region_name, ...r }))}
+        rows={data.items.map((r) => ({ key: String(r.region_id), label: archivedLabel(r.region_name, r.archived), ...r }))}
         onRowClick={(key) => navigate(`${baseUrl}reports/regions/${key}`)}
         labelHeader="Region"
       />
