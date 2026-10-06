@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Plus,
@@ -24,13 +25,6 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -64,6 +58,9 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { buildUserBody, type UserForm } from "@/lib/users/placement";
 import { api } from "@/lib/api";
 import { useAuthStore } from "@/store/auth";
+
+const ENV = import.meta.env;
+const baseUrl = ENV.VITE_BASE_URL || "/";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -115,22 +112,6 @@ interface User {
   regions: { id: number; name: string }[];
   region_ids: number[];
   temp_password: string | null;
-}
-
-interface ImportCredential {
-  user_name: string;
-  temp_password: string;
-}
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-function readFileAsText(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = (e) => resolve(e.target?.result as string);
-    reader.onerror = () => reject(new Error("Failed to read file"));
-    reader.readAsText(file);
-  });
 }
 
 // ── Temp password cell ────────────────────────────────────────────────────────
@@ -482,144 +463,6 @@ function UserFormSheet({
   );
 }
 
-// ── Import dialog ─────────────────────────────────────────────────────────────
-
-interface ImportResult {
-  imported: number;
-  skipped?: number;
-  credentials: ImportCredential[];
-}
-
-interface ImportDialogProps {
-  open: boolean;
-  onClose: () => void;
-  onImported: (result: ImportResult) => void;
-}
-
-function ImportDialog({ open, onClose, onImported }: ImportDialogProps) {
-  const fileRef = useRef<HTMLInputElement>(null);
-  const [loading, setLoading] = useState(false);
-
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    const file = fileRef.current?.files?.[0];
-    if (!file) {
-      toast.error("Select a CSV file first.");
-      return;
-    }
-    setLoading(true);
-    const csv = await readFileAsText(file);
-    const res = await api.post<ImportResult>("/admin/users/import", { csv });
-    setLoading(false);
-    if (res.error !== null) {
-      toast.error(res.error);
-      return;
-    }
-    onImported(res.data);
-    onClose();
-  }
-
-  return (
-    <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="sm:max-w-lg">
-        <DialogHeader>
-          <DialogTitle>Import Users from CSV</DialogTitle>
-        </DialogHeader>
-        <form onSubmit={handleSubmit} className="flex flex-col gap-4 py-2">
-          <p className="text-sm text-muted-foreground">
-            Required columns: <code>first_name</code>, <code>last_name</code>,{" "}
-            <code>national_id</code>, <code>id_type</code>, <code>email</code>.
-            <br />
-            Optional: <code>facility_code</code>, <code>department_code</code>,{" "}
-            <code>role_code</code>, <code>title_code</code>.
-          </p>
-          <Input ref={fileRef} type="file" accept=".csv" required />
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={onClose}>
-              Cancel
-            </Button>
-            <Button type="submit" disabled={loading}>
-              {loading ? "Importing…" : "Import"}
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-// ── Credentials dialog (shown after import) ───────────────────────────────────
-
-function CredentialsDialog({
-  result,
-  onClose,
-}: {
-  result: ImportResult | null;
-  onClose: () => void;
-}) {
-  if (!result) return null;
-
-  function downloadCsv() {
-    const header = "username,temp_password";
-    const rows = result!.credentials.map(
-      (c) => `${c.user_name},${c.temp_password}`,
-    );
-    const blob = new Blob([[header, ...rows].join("\n")], { type: "text/csv" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "credentials.csv";
-    a.click();
-    URL.revokeObjectURL(url);
-  }
-
-  return (
-    <Dialog open onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="sm:max-w-lg">
-        <DialogHeader>
-          <DialogTitle>
-            Import complete — {result.imported} created
-            {result.skipped ? `, ${result.skipped} skipped` : ""}
-          </DialogTitle>
-        </DialogHeader>
-        <p className="text-sm text-muted-foreground">
-          These are the temporary passwords. Users will be prompted to change
-          them on first login. Download or copy them now — they are also visible
-          per-user in the table.
-        </p>
-        <div className="max-h-64 overflow-y-auto rounded-md border">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Username</TableHead>
-                <TableHead>Temp Password</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {result.credentials.map((c) => (
-                <TableRow key={c.user_name}>
-                  <TableCell className="text-xs font-mono">
-                    {c.user_name}
-                  </TableCell>
-                  <TableCell className="text-xs font-mono">
-                    {c.temp_password}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={downloadCsv}>
-            Download CSV
-          </Button>
-          <Button onClick={onClose}>Done</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
 // ── Reset password confirmation ───────────────────────────────────────────────
 
 function ResetPasswordDialog({
@@ -664,8 +507,6 @@ export default function UsersPage() {
 
   const [sheetOpen, setSheetOpen] = useState(false);
   const [editing, setEditing] = useState<User | null>(null);
-  const [importOpen, setImportOpen] = useState(false);
-  const [importResult, setImportResult] = useState<ImportResult | null>(null);
   const [resetTarget, setResetTarget] = useState<User | null>(null);
 
   // Search + pagination (client-side — user list is small).
@@ -785,13 +626,10 @@ export default function UsersPage() {
       <div className="flex flex-1" />
       {isAdmin && (
         <div className="flex items-center gap-2">
-          <Button
-            size="sm"
-            variant="outline"
-            className="h-8 gap-1.5 text-xs"
-            onClick={() => setImportOpen(true)}
-          >
-            <FileUp className="h-3.5 w-3.5" /> Import CSV
+          <Button asChild size="sm" variant="outline" className="h-8 gap-1.5 text-xs">
+            <Link to={`${baseUrl}setup`} title="Bulk-import users with the country setup workbook">
+              <FileUp className="h-3.5 w-3.5" /> Bulk import on Setup
+            </Link>
           </Button>
           <Button
             size="sm"
@@ -867,7 +705,7 @@ export default function UsersPage() {
                         className="py-8 text-center text-muted-foreground"
                       >
                         {users.length === 0
-                          ? "No users yet. Add one or import a CSV."
+                          ? "No users yet. Add one, or bulk-import users with the workbook on the Setup page."
                           : "No users match your search."}
                       </TableCell>
                     </TableRow>
@@ -984,20 +822,6 @@ export default function UsersPage() {
         titles={titles}
         regions={regions}
         onSaved={invalidate}
-      />
-
-      <ImportDialog
-        open={importOpen}
-        onClose={() => setImportOpen(false)}
-        onImported={(result) => {
-          setImportResult(result);
-          invalidate();
-        }}
-      />
-
-      <CredentialsDialog
-        result={importResult}
-        onClose={() => setImportResult(null)}
       />
 
       <ResetPasswordDialog
