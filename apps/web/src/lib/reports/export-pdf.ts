@@ -18,8 +18,9 @@ function titleFor(r: AnyReport): string {
   }
 }
 
-// Respondents/Avg/level cells. Rows hidden for privacy (partner view, fewer
-// than 3 respondents) print a label rather than misleading zeros.
+// Respondents/Avg/level cells. Rows hidden for privacy in the partner view
+// (fewer than 3 respondents, or hidden alongside one so it can't be subtracted
+// out) print a label rather than misleading zeros.
 function countCells(i: MaturityCounts): (string | number)[] {
   if (i.suppressed) return [suppressionText(i.suppressed).export, '—', '—', '—', '—', '—', '—'];
   return [

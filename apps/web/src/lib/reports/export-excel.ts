@@ -16,8 +16,9 @@ function titleFor(r: AnyReport): string {
   }
 }
 
-// Shared count columns. Rows hidden for privacy (partner view, fewer than 3
-// respondents) export as a label rather than misleading zeros.
+// Shared count columns. Rows hidden for privacy in the partner view (fewer
+// than 3 respondents, or hidden alongside one so it can't be subtracted out)
+// export as a label rather than misleading zeros.
 function countColumns(i: MaturityCounts): Record<string, unknown> {
   if (i.suppressed) {
     return {

@@ -32,8 +32,10 @@ assessed themselves — for example an NGO partner supporting a project.
 - Partners never open department or individual reports, and cannot take
   assessments.
 - To protect individuals, any department, facility or district with only 1 or
-  2 respondents shows as "Fewer than 3 respondents" for partners — its results
-  are hidden on screen and in exports. Admins and staff still see the numbers.
+  2 respondents shows as "Fewer than 3 respondents" for partners. When that
+  would leave a single hidden row in a list, one more row is hidden ("Hidden
+  for privacy") so the hidden results can't be worked out by subtraction.
+  This applies on screen and in exports. Admins and staff still see the numbers.
 - Region, district and facility reports use each facility's **current** region:
   if a facility moves to another region, its past responses move with it.
 - Partners cannot open the national report.
