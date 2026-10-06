@@ -45,7 +45,7 @@ assessed themselves — for example an NGO partner supporting a project.
 
 ## Importing users in bulk
 
-Bulk import lives on the **Setup** page (**Bulk import on Setup** links there): the **Users** tab of the country setup workbook. Users are matched by email; existing users keep their username and password, new users get a generated username and a temporary password, and users missing from the tab are **disabled** (never deleted). The preview shows every change first, and the import will not disable or demote you. Right after the import, **Download credentials** gives you each new user's username and temporary password — the list is shown only once. The **Setup** docs page lists the columns and rules.
+Bulk import lives on the **Setup** page (**Bulk import on Setup** links there): the **Users** tab of the country setup workbook. Users are matched by email; existing users keep their username and password, new users get a generated username and a temporary password, and users missing from the tab are **disabled** (never deleted). The preview shows every change first, and the import will not disable or demote you. Right after the import, **Download credentials** gives you each new user's username and temporary password — the download is offered only once, but temporary passwords stay visible on the Users page until each user's first login. The **Setup** docs page lists the columns and rules.
 
 ## Editing + resetting
 

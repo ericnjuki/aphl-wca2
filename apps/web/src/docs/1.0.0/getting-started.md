@@ -13,7 +13,7 @@ Welcome to **LabWorkforce** — a tool for running competency assessments across
 
 1. **Sign in** with the built-in admin account and set your own password.
 2. **Setup → Get started** — export the country setup template, fill in regions, districts, facilities, departments, org roles, job titles and users, then import it. The preview shows every change before anything is saved. Keep your own admin account on the Users tab, and give every staff user a **facility** and **department**: responses snapshot them at completion time, so unassigned users don't roll up into regional reports. The **Setup** docs page lists the columns and rules; a [sample workbook](data/sample-country-setup.xlsx) shows a filled-in example.
-3. **Hand out credentials** — straight after the import, download the new users' usernames and temporary passwords (shown only once). Users change the password at first login. You can also add or edit users one at a time on the **Users** page.
+3. **Hand out credentials** — straight after the import, download the new users' usernames and temporary passwords (the download is offered only once; temporary passwords stay visible on the Users page until each user's first login). Users change the password at first login. You can also add or edit users one at a time on the **Users** page.
 4. **Assessments** — the catalogue is already loaded. Review it on the **Assessments** page; use **Export catalogue / Import catalogue** for bulk changes.
 
 To change the organisation later, export the setup, edit it and import it again — rows you remove are archived (or deleted when they have no history) and users you remove are disabled.

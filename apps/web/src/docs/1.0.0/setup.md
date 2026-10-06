@@ -6,9 +6,11 @@ All of the reference data your user directory and reports depend on. **Admin-onl
 
 The quickest way to set up a country — and to keep it up to date — is one Excel workbook.
 
-- **Export setup** (top right) downloads `country-setup.xlsx` with everything that is currently active. On a new system it is the empty template.
+- **Export setup** (top right) downloads `country-setup.xlsx` with everything that is currently active (the Users tab also includes disabled users, with their status). On a new system it is the empty template.
 - **Import workbook** uploads a filled-in workbook, previews every change, and applies all of it in one go — or nothing.
-- A worked example: [sample-country-setup.xlsx](data/sample-country-setup.xlsx). Its first Users row is the built-in admin account; replace it with your own admin account before importing.
+- A worked example: [sample-country-setup.xlsx](data/sample-country-setup.xlsx). Its first Users row is the built-in admin account; keep the row for the account you are signed in as. You can add your own admin account as another row, and later disable the built-in one by setting its status to `disabled` in a subsequent import while signed in as your own account.
+
+**Before the first import:** facilities without a district cannot be exported or imported cleanly, so assign districts to every facility first.
 
 When there are no regions yet, the Setup page shows a **Get started** card with three steps: export the template, fill it in, import it.
 
