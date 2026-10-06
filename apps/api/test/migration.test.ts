@@ -41,3 +41,13 @@ describe('migration 10 — user_regions', () => {
     expect(idx).toHaveLength(1);
   });
 });
+
+describe('migration 11 — archived_at', () => {
+  beforeAll(initTestDb);
+
+  it('adds archived_at to every organisation table', () => {
+    for (const table of ['regions', 'districts', 'facilities', 'departments', 'org_roles', 'user_titles']) {
+      expect(columns(table)).toContain('archived_at');
+    }
+  });
+});

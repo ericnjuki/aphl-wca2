@@ -292,6 +292,20 @@ const migrations: { id: number; sql: string }[] = [
       CREATE INDEX IF NOT EXISTS idx_user_regions_region ON user_regions(region_id);
     `,
   },
+  {
+    id: 11,
+    sql: `
+      -- Workbook import: an organisation entity removed from the country setup
+      -- workbook is archived (kept for history) instead of deleted when
+      -- responses or users still reference it. NULL = active.
+      ALTER TABLE regions     ADD COLUMN archived_at TEXT;
+      ALTER TABLE districts   ADD COLUMN archived_at TEXT;
+      ALTER TABLE facilities  ADD COLUMN archived_at TEXT;
+      ALTER TABLE departments ADD COLUMN archived_at TEXT;
+      ALTER TABLE org_roles   ADD COLUMN archived_at TEXT;
+      ALTER TABLE user_titles ADD COLUMN archived_at TEXT;
+    `,
+  },
 ];
 
 export async function runMigrations(db: Database): Promise<void> {
