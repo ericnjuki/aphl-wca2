@@ -91,7 +91,7 @@ Warnings (do not block):
 - Bundled at `apps/api/seed-data/assessment-catalogue.xlsx`, produced once by a
   conversion script from the existing CSVs; the 22 CSVs are then removed.
 - **Startup**: same rules as today's `seed-assessments.ts` — insert missing domains; insert items/footnotes only for domains that have none. Never overwrites.
-- **Admin re-import**: preview → apply, add + update only. A fresh database seeded from the workbook must match today's CSV seeding (20 domains, 416 items, footnotes).
+- **Admin re-import**: preview → apply, add + update only. A fresh database seeded from the workbook must match today's CSV seeding (20 domains, 511 items, 1 footnote — the counts a fresh database gets from the current CSVs).
 - `GET /assessments/catalogue/export` writes the current catalogue in this format.
 
 ## 3. Import flow
@@ -173,7 +173,7 @@ API (vitest; fixtures built with ExcelJS inside tests):
 - Planner: add / update / unchanged / archive-with-history / delete-without-history / restore; missing tab = no change; every validation rule in §1; lock-out guards; >50% warning.
 - Apply: atomic (error → nothing changed), stale fingerprint → 409, credentials only for new users.
 - Round trip: export then re-import → plan with no changes.
-- Catalogue: fresh DB from bundled workbook = 20 domains / 416 items / footnotes; re-import add + update only.
+- Catalogue: fresh DB from bundled workbook = 20 domains / 511 items / 1 footnote; re-import add + update only.
 - Reports: archived children only with data; complementary suppression (one hidden → second hidden; single non-empty row); `meta.avg_level` correct and null for small partner views.
 
 Web (vitest, pure logic): preview grouping, confirmation sentence.
