@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import * as XLSX from "xlsx";
 import { AlertTriangle, ChevronRight } from "lucide-react";
@@ -57,7 +57,11 @@ export function ImportWorkbookDialog({
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<ApplyResult | null>(null);
 
+  // Bumped by reset(): a response that lands after the dialog was closed or restarted is ignored.
+  const requestId = useRef(0);
+
   function reset() {
+    requestId.current += 1;
     setStep("upload");
     setFile(null);
     setPlan(null);
@@ -66,32 +70,48 @@ export function ImportWorkbookDialog({
     setLoading(false);
   }
 
+  // The parent may close the dialog itself (open=false) without going through close().
+  useEffect(() => {
+    if (!open) reset();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
   function close() {
     reset();
     onClose();
   }
 
-  async function preview(f: File) {
+  /** Returns true when a fresh plan is showing. */
+  async function preview(f: File): Promise<boolean> {
+    const id = ++requestId.current;
     setLoading(true);
     const res = await postWorkbook<{ plan: ImportPlan }>(previewPath, f);
+    if (id !== requestId.current) return false;
     setLoading(false);
     if (res.error !== null) {
       toast.error(res.error);
-      return;
+      return false;
     }
     setPlan(res.data.plan);
     setConfirmed(false);
     setStep("preview");
+    return true;
   }
 
   async function apply() {
     if (!file || !plan) return;
+    const id = ++requestId.current;
     setLoading(true);
     const res = await postWorkbook<ApplyResult>(`${applyPath}?fingerprint=${encodeURIComponent(plan.fingerprint)}`, file);
+    if (id !== requestId.current) return;
     setLoading(false);
     if (res.error !== null) {
       toast.error(res.error);
-      if (res.status === 409) await preview(file); // data moved on: show the fresh plan
+      if (res.status === 409) {
+        // Data moved on: drop the stale plan, show the fresh one, or start over if that fails.
+        setPlan(null);
+        if (!(await preview(file))) setStep("upload");
+      }
       return;
     }
     setResult(res.data);
@@ -101,10 +121,16 @@ export function ImportWorkbookDialog({
 
   const confirmNeeded = plan ? needsConfirmation(plan.confirmations) : false;
   const errors = plan ? allErrors(plan) : [];
+  // Credentials are shown once: only the explicit Done button may dismiss that step.
+  const lockDismiss = step === "done" && (result?.credentials.length ?? 0) > 0;
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && close()}>
-      <DialogContent className="sm:max-w-3xl max-h-[85vh] flex flex-col">
+      <DialogContent
+        className="sm:max-w-3xl max-h-[85vh] flex flex-col"
+        onInteractOutside={(e) => { if (lockDismiss) e.preventDefault(); }}
+        onEscapeKeyDown={(e) => { if (lockDismiss) e.preventDefault(); }}
+      >
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
         </DialogHeader>
@@ -232,7 +258,7 @@ export function ImportWorkbookDialog({
               <Button type="button" variant="outline" onClick={reset}>Choose another file</Button>
               <Button
                 type="button"
-                disabled={!plan.canApply || loading || (confirmNeeded && !confirmed)}
+                disabled={!plan.canApply || errors.length > 0 || loading || (confirmNeeded && !confirmed)}
                 onClick={() => void apply()}
               >
                 {loading ? "Applying…" : "Apply changes"}
