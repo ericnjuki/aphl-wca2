@@ -25,8 +25,8 @@ Drill down by **clicking a bar** in the stacked chart or **any row** in the brea
   Partners only see approved submissions; pending and rejected ones are never
   counted for them.
   Rows with only 1 or 2 respondents are shown as "Fewer than 3 respondents";
-  if that leaves one hidden row in a list, another is hidden too ("Hidden for
-  privacy") so a list's totals can't reveal it on their own. Opening a hidden
+  hiding then continues ("Hidden for privacy") until the hidden rows together
+  cover at least 3 people, so a list's totals can't reveal them. Opening a hidden
   district or facility shows a "hidden for privacy" notice instead of its numbers.
 
 ## Filters (top bar)
