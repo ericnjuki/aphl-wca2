@@ -150,8 +150,10 @@ describe('small-group suppression for partner users', () => {
     resp(a, 2); resp(a, 3); resp(a, 4); // all rows visible
     resp(null, 4);                      // one unassigned respondent
     const asPartner = await get(`/reports/facilities/${f3}`, monitor);
-    expect(row(asPartner.body.items, 'department_id', a).suppressed).toBeUndefined();
-    expect(asPartner.body.meta.unassigned_respondents).toBe(1);
+    // The lone unassigned respondent is a hidden remainder, so the row is hidden too
+    // and the unassigned figure is not reported.
+    expect(row(asPartner.body.items, 'department_id', a).suppressed).toBe('complementary');
+    expect(asPartner.body.meta.unassigned_respondents).toBe(0);
     expect(asPartner.body.meta.avg_level).toBeNull();
     const asAdmin = await get(`/reports/facilities/${f3}`, admin);
     expect(asAdmin.body.meta.avg_level).toBeCloseTo(3.25);

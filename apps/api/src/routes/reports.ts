@@ -47,6 +47,14 @@ function uarOnFilters(f: CommonFilters): { sql: string; params: SqlValue[] } {
   return { sql: parts.length ? ' AND ' + parts.join(' AND ') : '', params };
 }
 
+// WHERE clause over responses: an optional base predicate plus the request's
+// domain/competency filters (the approved-only filter lives on the ua join).
+function responseWhere(f: CommonFilters, base?: Placement): Placement {
+  const on = uarOnFilters(f);
+  const parts = [base ? `(${base.sql})` : '', on.sql.replace(/^ AND /, '')].filter(Boolean);
+  return { sql: parts.length ? 'WHERE ' + parts.join(' AND ') : '', params: [...(base?.params ?? []), ...on.params] };
+}
+
 function uaOnFilter(f: CommonFilters): string {
   return f.approvedOnly ? " AND ua.review_status = 'approved'" : '';
 }
@@ -67,10 +75,11 @@ const COUNTS_SELECT = `
 // are blanked and the row is flagged `suppressed: 'small'`. Empty buckets are
 // left as-is.
 //
-// A single hidden row could still be recovered as `parent total - visible
-// rows`, so when exactly one row is hidden the smallest other non-empty row is
-// hidden too (`suppressed: 'complementary'`). Lists arrive ordered by name, so
-// ties go to the first by name.
+// Hidden rows could still be recovered as `parent total - visible rows`, so
+// while the hidden rows together hold fewer than MIN_GROUP_SIZE people the
+// smallest other non-empty row is hidden too (`suppressed: 'complementary'`).
+// Lists arrive ordered by name, so ties go to the first by name (pseudo-rows
+// come last).
 const MIN_GROUP_SIZE = 3;
 const BLANK_COUNTS = {
   respondents: 0, total_responses: 0, avg_level: null,
@@ -89,13 +98,16 @@ function suppressSmallGroups<T extends Record<string, unknown>>(scope: Scope, it
     if (n > 0 && n < MIN_GROUP_SIZE) hidden.set(i, 'small');
   });
 
-  if (hidden.size === 1) {
+  let hiddenTotal = [...hidden.keys()].reduce((sum, i) => sum + count(items[i]), 0);
+  while (hidden.size > 0 && hiddenTotal < MIN_GROUP_SIZE) {
     let pick = -1;
     items.forEach((item, i) => {
       if (hidden.has(i) || count(item) === 0) return;
       if (pick === -1 || count(item) < count(items[pick])) pick = i;
     });
-    if (pick !== -1) hidden.set(pick, 'complementary');
+    if (pick === -1) break;
+    hidden.set(pick, 'complementary');
+    hiddenTotal += count(items[pick]);
   }
 
   return items.map((item, i) => {
@@ -258,16 +270,14 @@ function regionDistrictList(
   );
 
   // Region respondents covered by no district row and no undistricted facility.
-  const whereParts: string[] = [
-    'uar.region_id = ?',
-    `NOT (COALESCE(uar.district_id IN (SELECT id FROM districts WHERE region_id = ?), 0)
-          OR COALESCE(uar.district_id IS NULL AND uar.facility_id IN
-                (SELECT id FROM facilities WHERE region_id = ? AND district_id IS NULL), 0))`,
-  ];
-  const whereParams: SqlValue[] = [regionId, regionId, regionId];
-  if (f.domainCode)      { whereParts.push('uar.domain_code = ?');      whereParams.push(f.domainCode); }
-  if (f.competencyValue) { whereParts.push('uar.competency_value = ?'); whereParams.push(f.competencyValue); }
-  const remainder = respondentCounts('WHERE ' + whereParts.join(' AND '), whereParams, f, 'region_id').total;
+  const ru = regionUnassigned(regionId);
+  const w = responseWhere(f, {
+    sql: `uar.region_id = ? AND (${ru.sql})
+          AND NOT COALESCE(uar.district_id IS NULL AND uar.facility_id IN
+                (SELECT id FROM facilities WHERE region_id = ? AND district_id IS NULL), 0)`,
+    params: [regionId, ...ru.params, regionId],
+  });
+  const remainder = respondentCounts(w.sql, w.params, f, 'region_id').total;
 
   const pseudo: Record<string, unknown>[] = [...undistricted.map((u) => ({ respondents: u.respondents })), { respondents: remainder }];
   const all = suppressSmallGroups(scope, [...rows, ...pseudo]);
@@ -293,6 +303,7 @@ function districtFacilityList(
 ): { items: Record<string, unknown>[]; remainderHidden: boolean } {
   const on = uarOnFilters(f);
   const fp = facilityPlacement(scope, 'fa');
+  const dp = districtPlacement(scope, district);
   const items = query(
     `SELECT fa.id AS facility_id, fa.name AS facility_name, fa.archived_at, ${COUNTS_SELECT}
      FROM facilities fa
@@ -307,16 +318,52 @@ function districtFacilityList(
   const rows = withArchived(items);
   if (scope.role !== 'monitor') return { items: rows, remainderHidden: false };
 
-  const dp = districtPlacement(scope, district);
-  const covered = facilityPlacement(scope, 'fa');
-  const whereParts: string[] = [
-    dp.sql,
-    `NOT EXISTS (SELECT 1 FROM facilities fa WHERE fa.district_id = ? AND ${covered.sql})`,
-  ];
-  const whereParams: SqlValue[] = [...dp.params, district.id, ...covered.params];
-  if (f.domainCode)      { whereParts.push('uar.domain_code = ?');      whereParams.push(f.domainCode); }
-  if (f.competencyValue) { whereParts.push('uar.competency_value = ?'); whereParams.push(f.competencyValue); }
-  const remainder = respondentCounts('WHERE ' + whereParts.join(' AND '), whereParams, f, 'facility_id').total;
+  const w = responseWhere(f, {
+    sql: `${dp.sql} AND NOT EXISTS (SELECT 1 FROM facilities fa WHERE fa.district_id = ? AND ${fp.sql})`,
+    params: [...dp.params, district.id, ...fp.params],
+  });
+  const remainder = respondentCounts(w.sql, w.params, f, 'facility_id').total;
+
+  const all = suppressSmallGroups(scope, [...rows, { respondents: remainder } as Record<string, unknown>]);
+  return { items: all.slice(0, -1), remainderHidden: all[all.length - 1].suppressed !== undefined };
+}
+
+// Facility level, partners: respondents counted in the facility (facility
+// placement) but in no listed department row - no department, or a department no
+// longer linked to the facility and not archived - form ONE remainder
+// pseudo-row that takes part in suppression (not added to items).
+//
+// Every department linked to the facility (even empty ones), plus archived
+// departments - linked or not - that still have responses here (withArchived
+// drops the empty archived ones). LEFT JOIN responses keeps zero-response rows.
+const LISTED_DEPARTMENTS = `SELECT d.id FROM departments d
+   LEFT JOIN facility_departments fd ON fd.department_id = d.id AND fd.facility_id = ?
+   WHERE fd.facility_id IS NOT NULL OR d.archived_at IS NOT NULL`;
+
+function facilityDepartmentList(
+  scope: Scope, f: CommonFilters, facility: FacilityRef,
+): { items: Record<string, unknown>[]; remainderHidden: boolean } {
+  const on = uarOnFilters(f);
+  const fp = facilityPlacement(scope, facility);
+  const rows = withArchived(query(
+    `SELECT d.id AS department_id, d.name AS department_name, d.archived_at, ${COUNTS_SELECT}
+     FROM departments d
+     LEFT JOIN facility_departments fd ON fd.department_id = d.id AND fd.facility_id = ?
+     LEFT JOIN user_assessment_responses uar
+            ON uar.department_id = d.id AND ${fp.sql}${on.sql}
+     LEFT JOIN user_assessments ua ON ua.id = uar.user_assessment_id${uaOnFilter(f)}
+     WHERE fd.facility_id IS NOT NULL OR d.archived_at IS NOT NULL
+     GROUP BY d.id, d.name, d.archived_at
+     ORDER BY d.name`,
+    [facility.id, ...fp.params, ...on.params],
+  ));
+  if (scope.role !== 'monitor') return { items: rows, remainderHidden: false };
+
+  const w = responseWhere(f, {
+    sql: `${fp.sql} AND NOT COALESCE(uar.department_id IN (${LISTED_DEPARTMENTS}), 0)`,
+    params: [...fp.params, facility.id],
+  });
+  const remainder = respondentCounts(w.sql, w.params, f, 'department_id').total;
 
   const all = suppressSmallGroups(scope, [...rows, { respondents: remainder } as Record<string, unknown>]);
   return { items: all.slice(0, -1), remainderHidden: all[all.length - 1].suppressed !== undefined };
@@ -383,13 +430,9 @@ router.get('/national', (req: Request, res: Response, next: NextFunction) => {
       on.params,
     );
 
-    const whereParts: string[] = [];
-    const whereParams: SqlValue[] = [];
-    if (f.domainCode)      { whereParts.push('uar.domain_code = ?');      whereParams.push(f.domainCode); }
-    if (f.competencyValue) { whereParts.push('uar.competency_value = ?'); whereParams.push(f.competencyValue); }
-    const whereSql = whereParts.length ? 'WHERE ' + whereParts.join(' AND ') : '';
+    const w = responseWhere(f);
     // At national level, "unassigned" = no region_id → not in any regional bucket.
-    const counts = respondentCounts(whereSql, whereParams, f, 'region_id');
+    const counts = respondentCounts(w.sql, w.params, f, 'region_id');
 
     res.json({ level: 'national', items: withArchived(items), meta: meta(f, counts.total, counts.unassigned, viewAvg(scope, counts)) });
   } catch (err) { next(err); }
@@ -418,15 +461,12 @@ router.get('/regions/:regionId', (req: Request, res: Response, next: NextFunctio
       [regionId],
     );
 
-    const whereParts: string[] = ['uar.region_id = ?'];
-    const whereParams: SqlValue[] = [regionId];
-    if (f.domainCode)      { whereParts.push('uar.domain_code = ?');      whereParams.push(f.domainCode); }
-    if (f.competencyValue) { whereParts.push('uar.competency_value = ?'); whereParams.push(f.competencyValue); }
+    const w = responseWhere(f, { sql: 'uar.region_id = ?', params: [regionId] });
     // At region level, unassigned = respondents in this region with no district_id,
     // OR whose district_id points at a district that isn't (or no longer is) in this
     // region — a snapshot left behind by a re-districted facility or a moved district.
     // Without this, such a respondent would vanish from both the bars and the total.
-    const counts = respondentCounts('WHERE ' + whereParts.join(' AND '), whereParams, f, regionUnassigned(regionId));
+    const counts = respondentCounts(w.sql, w.params, f, regionUnassigned(regionId));
 
     res.json({ level: 'region', region, items, undistricted_facilities, meta: meta(f, counts.total, anyPseudoHidden ? 0 : counts.unassigned, viewAvg(scope, counts)) });
   } catch (err) { next(err); }
@@ -452,17 +492,13 @@ router.get('/districts/:districtId', (req: Request, res: Response, next: NextFun
 
     const { items, remainderHidden } = districtFacilityList(scope, f, district);
 
-    const dp = districtPlacement(scope, district);
-    const whereParts: string[] = [dp.sql];
-    const whereParams: SqlValue[] = [...dp.params];
-    if (f.domainCode)      { whereParts.push('uar.domain_code = ?');      whereParams.push(f.domainCode); }
-    if (f.competencyValue) { whereParts.push('uar.competency_value = ?'); whereParams.push(f.competencyValue); }
-    // At district level, unassigned = respondents in this district with no facility_id.
-    const counts = respondentCounts('WHERE ' + whereParts.join(' AND '), whereParams, f, 'facility_id');
-
     if (isDistrictPrivacyHidden(scope, f, district)) {
       return res.json({ level: 'district', district, items: blankItems(items), meta: hiddenMeta(f) });
     }
+
+    const w = responseWhere(f, districtPlacement(scope, district));
+    // At district level, unassigned = respondents in this district with no facility_id.
+    const counts = respondentCounts(w.sql, w.params, f, 'facility_id');
 
     res.json({ level: 'district', district, items, meta: meta(f, counts.total, remainderHidden ? 0 : counts.unassigned, viewAvg(scope, counts)) });
   } catch (err) { next(err); }
@@ -490,39 +526,16 @@ router.get('/facilities/:facilityId', (req: Request, res: Response, next: NextFu
     if (!facility) return next(createError('Facility not found', 404));
 
     const f = parseFilters(req);
-    const on = uarOnFilters(f);
 
-    const fp = facilityPlacement(scope, facility);
-
-    // Every department linked to the facility (even empty ones), plus archived
-    // departments — linked or not — that still have responses here (withArchived
-    // drops the empty archived ones). LEFT JOIN responses keeps zero-response rows.
-    const items = query(
-      `SELECT d.id AS department_id, d.name AS department_name, d.archived_at, ${COUNTS_SELECT}
-       FROM departments d
-       LEFT JOIN facility_departments fd ON fd.department_id = d.id AND fd.facility_id = ?
-       LEFT JOIN user_assessment_responses uar
-              ON uar.department_id = d.id AND ${fp.sql}${on.sql}
-       LEFT JOIN user_assessments ua ON ua.id = uar.user_assessment_id${uaOnFilter(f)}
-       WHERE fd.facility_id IS NOT NULL OR d.archived_at IS NOT NULL
-       GROUP BY d.id, d.name, d.archived_at
-       ORDER BY d.name`,
-      [facilityId, ...fp.params, ...on.params],
-    );
-
-    const whereParts: string[] = [fp.sql];
-    const whereParams: SqlValue[] = [...fp.params];
-    if (f.domainCode)      { whereParts.push('uar.domain_code = ?');      whereParams.push(f.domainCode); }
-    if (f.competencyValue) { whereParts.push('uar.competency_value = ?'); whereParams.push(f.competencyValue); }
-    // At facility level, unassigned = respondents in this facility with no department_id.
-    const counts = respondentCounts('WHERE ' + whereParts.join(' AND '), whereParams, f, 'department_id');
-
-    const suppressed = suppressSmallGroups(scope, withArchived(items));
+    const { items, remainderHidden } = facilityDepartmentList(scope, f, facility);
     if (isFacilityPrivacyHidden(scope, f, facility)) {
-      return res.json({ level: 'facility', facility, items: blankItems(suppressed), meta: hiddenMeta(f) });
+      return res.json({ level: 'facility', facility, items: blankItems(items), meta: hiddenMeta(f) });
     }
 
-    res.json({ level: 'facility', facility, items: suppressed, meta: meta(f, counts.total, counts.unassigned, viewAvg(scope, counts)) });
+    const w = responseWhere(f, facilityPlacement(scope, facility));
+    // At facility level, unassigned = respondents in this facility with no department_id.
+    const counts = respondentCounts(w.sql, w.params, f, 'department_id');
+    res.json({ level: 'facility', facility, items, meta: meta(f, counts.total, remainderHidden ? 0 : counts.unassigned, viewAvg(scope, counts)) });
   } catch (err) { next(err); }
 });
 
@@ -578,14 +591,13 @@ router.get('/departments/:departmentId', (req: Request, res: Response, next: Nex
       [departmentId, ...facilityParams, ...on.params],
     );
 
-    const whereParts: string[] = ['uar.department_id = ?'];
-    const whereParams: SqlValue[] = [departmentId];
-    if (facility) { whereParts.push('uar.facility_id = ?'); whereParams.push(facility.id); }
-    if (f.domainCode)      { whereParts.push('uar.domain_code = ?');      whereParams.push(f.domainCode); }
-    if (f.competencyValue) { whereParts.push('uar.competency_value = ?'); whereParams.push(f.competencyValue); }
+    const w = responseWhere(f, {
+      sql: 'uar.department_id = ?' + (facility ? ' AND uar.facility_id = ?' : ''),
+      params: facility ? [departmentId, facility.id] : [departmentId],
+    });
     // At department level every respondent is in the bucket already — no
     // separate "unassigned" concept. Zero out to keep the meta shape stable.
-    const counts = respondentCounts('WHERE ' + whereParts.join(' AND '), whereParams, f, 'department_id');
+    const counts = respondentCounts(w.sql, w.params, f, 'department_id');
 
     res.json({ level: 'department', department, facility, items, meta: meta(f, counts.total, 0, viewAvg(scope, counts)) });
   } catch (err) { next(err); }

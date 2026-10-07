@@ -3,7 +3,7 @@ import request from 'supertest';
 import { execute } from '../src/db/database';
 import {
   initTestDb, resetDb, testApp, asUser, createRegion, createDistrict, createFacility,
-  createUser, assignRegions, addResponse,
+  createUser, assignRegions, addResponse, createDepartment,
 } from './helpers';
 
 const app = testApp();
@@ -382,6 +382,88 @@ describe('partner drill-down privacy', () => {
       expect(rowOf(res.body.items, f1).suppressed).toBeUndefined();
       expect(rowOf(res.body.items, f2).suppressed).toBeUndefined();
       expect(res.body.meta.unassigned_respondents).toBe(0);
+    });
+  });
+
+  // Facility level: respondents in the facility's row but in no listed
+  // department row form a remainder that takes part in suppression.
+  describe('facility remainder', () => {
+    const setup = () => {
+      const a = createDistrict('A', 'Alpha', region);
+      const f = createFacility('F1', 'Alpha One', { regionId: region, districtId: a });
+      const lab = createDepartment('LAB', 'Laboratory', [f]);
+      const pha = createDepartment('PHA', 'Pharmacy', [f]);
+      const add = (n: number, departmentId: number | null) => {
+        for (let i = 0; i < n; i++) {
+          addResponse({ userId: createUser({ facilityId: f }), facilityId: f, regionId: region, districtId: a, departmentId });
+        }
+      };
+      add(3, lab); add(3, pha);
+      return { f, lab, pha, add };
+    };
+    const rowOf = (items: any[], id: number) => items.find((i) => i.department_id === id);
+
+    it('hides a complementary department when 1-2 no-department respondents form the remainder', async () => {
+      const { f, lab, pha, add } = setup();
+      add(1, null);
+      const res = await get(`/reports/facilities/${f}`, partner);
+      expect(res.body.meta.privacy_hidden).toBeFalsy();
+      expect(rowOf(res.body.items, lab).suppressed).toBe('complementary');
+      expect(rowOf(res.body.items, pha).suppressed).toBeUndefined();
+      expect(res.body.meta.unassigned_respondents).toBe(0);
+
+      const asAdmin = await get(`/reports/facilities/${f}`, admin);
+      expect(asAdmin.body.meta.unassigned_respondents).toBe(1);
+      expect(rowOf(asAdmin.body.items, lab).suppressed).toBeUndefined();
+    });
+
+    it('also covers respondents of a department no longer linked to the facility', async () => {
+      const { f, lab, pha } = setup();
+      const old = createDepartment('OLD', 'Old Dept', []);
+      for (let i = 0; i < 2; i++) {
+        addResponse({ userId: createUser({ facilityId: f }), facilityId: f, regionId: region,
+          districtId: (await get(`/reports/facilities/${f}`, admin)).body.facility.district_id, departmentId: old });
+      }
+      const res = await get(`/reports/facilities/${f}`, partner);
+      expect(rowOf(res.body.items, lab).suppressed).toBe('complementary');
+      expect(rowOf(res.body.items, pha).suppressed).toBeUndefined();
+    });
+
+    it('changes nothing when there is no remainder', async () => {
+      const { f, lab, pha } = setup();
+      const res = await get(`/reports/facilities/${f}`, partner);
+      expect(rowOf(res.body.items, lab).suppressed).toBeUndefined();
+      expect(rowOf(res.body.items, pha).suppressed).toBeUndefined();
+      expect(res.body.meta.unassigned_respondents).toBe(0);
+    });
+  });
+
+  // Hidden rows must total at least MIN_GROUP_SIZE people, or `parent - visible`
+  // reveals their combined results.
+  describe('hidden rows total', () => {
+    const facilities = (sizes: number[]) => {
+      const a = createDistrict('A', 'Alpha', region);
+      const ids = sizes.map((n, i) => {
+        const fid = createFacility(`F${i}`, `Facility ${i}`, { regionId: region, districtId: a });
+        respond(n, fid, a);
+        return fid;
+      });
+      return { a, ids };
+    };
+
+    it('keeps hiding while two 1-person rows total fewer than 3', async () => {
+      const { a, ids } = facilities([1, 1, 5]);
+      const res = await get(`/reports/districts/${a}`, partner);
+      const kind = (id: number) => res.body.items.find((i: any) => i.facility_id === id).suppressed;
+      expect(kind(ids[0])).toBe('small');
+      expect(kind(ids[1])).toBe('small');
+      expect(kind(ids[2])).toBe('complementary');
+    });
+
+    it('hides nothing extra when the small rows already total 3 or more', async () => {
+      const { a, ids } = facilities([2, 2, 5]);
+      const res = await get(`/reports/districts/${a}`, partner);
+      expect(res.body.items.find((i: any) => i.facility_id === ids[2]).suppressed).toBeUndefined();
     });
   });
 });
