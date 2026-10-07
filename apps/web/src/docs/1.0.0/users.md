@@ -36,6 +36,9 @@ assessed themselves — for example an NGO partner supporting a project.
   would leave a single hidden row in a list, one more row is hidden ("Hidden
   for privacy") so the hidden results are harder to work out from the totals in a list.
   This applies on screen and in exports. Admins and staff still see the numbers.
+- Partners only see approved submissions. The **Approved only** switch is
+  locked on for them, and pending or rejected submissions are never counted in
+  their reports or exports. Approving a submission adds it to what partners see.
 - Region, district and facility reports use each facility's **current** region:
   if a facility moves to another region, its past responses move with it.
 - Partners cannot open the national report.

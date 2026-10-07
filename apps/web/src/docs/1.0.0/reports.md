@@ -22,6 +22,8 @@ Drill down by **clicking a bar** in the stacked chart or **any row** in the brea
 - **Partner (monitor)** users land on their region (or a "Your regions" list if
   they have several) and can drill down to districts and facilities in those
   regions. Department and individual reports are not available to them.
+  Partners only see approved submissions; pending and rejected ones are never
+  counted for them.
   Rows with only 1 or 2 respondents are shown as "Fewer than 3 respondents";
   if that leaves one hidden row in a list, another is hidden too ("Hidden for
   privacy") so a list's totals can't reveal it on their own.
@@ -30,7 +32,7 @@ Drill down by **clicking a bar** in the stacked chart or **any row** in the brea
 
 - **All domains / domain picker** — restrict to one assessment framework
 - **All competencies** — (enabled after picking a domain) restrict to one competency within it
-- **Approved only** switch — default ON; turn OFF to include pending and rejected submissions in the aggregation (useful for pre-review previews)
+- **Approved only** switch — default ON; turn OFF to include pending and rejected submissions in the aggregation (useful for pre-review previews). Partners always see approved submissions only — the switch is locked on for them.
 
 ## Maturity legend
 

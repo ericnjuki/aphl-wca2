@@ -3,7 +3,8 @@
 // All endpoints share query params:
 //   domain_code?       filter to one competency domain (e.g. "LAB-SAFETY")
 //   competency_value?  filter to one competency within that domain
-//   approved_only?     default true — exclude rejected/pending submissions
+//   approved_only?     default true — exclude rejected/pending submissions;
+//                      always true for partner (monitor) users
 //
 // Response envelope:
 //   { level, items, meta: { total_respondents, unassigned_respondents, avg_level, generated_at, filters } }
@@ -11,6 +12,7 @@
 // LEFT JOIN pattern: the response-row filters (domain/competency/approved)
 // live in the JOIN's ON clause so buckets with zero responses still appear
 // in the output — otherwise empty regions/facilities/departments vanish.
+// Queries that start FROM user_assessment_responses put them in WHERE.
 
 import { Router, Request, Response, NextFunction } from 'express';
 import { SqlValue } from 'sql.js';
@@ -28,27 +30,30 @@ interface CommonFilters {
   approvedOnly: boolean;
 }
 
-function parseFilters(req: Request): CommonFilters {
+// Partners only ever see reviewed-and-approved data.
+function parseFilters(req: Request, scope: Scope): CommonFilters {
   const domainCode = (req.query.domain_code as string | undefined) || null;
   const competencyValue = (req.query.competency_value as string | undefined) || null;
   const raw = req.query.approved_only;
-  const approvedOnly = raw === undefined || raw === '1' || raw === 'true';
+  const approvedOnly = scope.role === 'monitor' || raw === undefined || raw === '1' || raw === 'true';
   return { domainCode, competencyValue, approvedOnly };
 }
 
+// Response rows are written when a survey is completed, before review, so
+// approval is checked against the owning session.
+const APPROVED_SQL =
+  "uar.user_assessment_id IN (SELECT id FROM user_assessments WHERE review_status = 'approved')";
+
 // Tacks the filter predicates onto a JOIN ON clause so LEFT JOINs preserve
 // empty buckets. Returns `{ sql, params }` where `sql` is always safe to
-// append after an existing ON condition (starts with " AND ").
+// append after an existing ON / WHERE condition (starts with " AND ").
 function uarOnFilters(f: CommonFilters): { sql: string; params: SqlValue[] } {
   const parts: string[] = [];
   const params: SqlValue[] = [];
   if (f.domainCode)      { parts.push('uar.domain_code = ?');      params.push(f.domainCode); }
   if (f.competencyValue) { parts.push('uar.competency_value = ?'); params.push(f.competencyValue); }
+  if (f.approvedOnly)    { parts.push(APPROVED_SQL); }
   return { sql: parts.length ? ' AND ' + parts.join(' AND ') : '', params };
-}
-
-function uaOnFilter(f: CommonFilters): string {
-  return f.approvedOnly ? " AND ua.review_status = 'approved'" : '';
 }
 
 const COUNTS_SELECT = `
@@ -158,14 +163,14 @@ function respondentCounts(
 ): { total: number; unassigned: number; avg: number | null } {
   const unassignedSql = typeof unassigned === 'string' ? `uar.${unassigned} IS NULL` : unassigned.sql;
   const unassignedParams = typeof unassigned === 'string' ? [] : unassigned.params;
+  const approvedSql = f.approvedOnly ? `${whereSql ? ' AND' : 'WHERE'} ${APPROVED_SQL}` : '';
   const [row] = query<{ total: number; unassigned: number; avg_level: number | null }>(
     `SELECT
        COUNT(DISTINCT uar.user_id)                                       AS total,
        COUNT(DISTINCT CASE WHEN ${unassignedSql} THEN uar.user_id END)   AS unassigned,
        AVG(CASE WHEN uar.response_level > 0 THEN uar.response_level END) AS avg_level
      FROM user_assessment_responses uar
-     LEFT JOIN user_assessments ua ON ua.id = uar.user_assessment_id${uaOnFilter(f)}
-     ${whereSql}`,
+     ${whereSql}${approvedSql}`,
     [...unassignedParams, ...whereParams],
   );
   return { total: row?.total ?? 0, unassigned: row?.unassigned ?? 0, avg: row?.avg_level ?? null };
@@ -178,14 +183,13 @@ router.get('/national', (req: Request, res: Response, next: NextFunction) => {
     const reason = denyReason(scope, { level: 'national' });
     if (reason) return next(createError(reason, 403));
 
-    const f = parseFilters(req);
+    const f = parseFilters(req, scope);
     const on = uarOnFilters(f);
 
     const items = query(
       `SELECT r.id AS region_id, r.name AS region_name, r.archived_at, ${COUNTS_SELECT}
        FROM regions r
        LEFT JOIN user_assessment_responses uar ON uar.region_id = r.id${on.sql}
-       LEFT JOIN user_assessments ua ON ua.id = uar.user_assessment_id${uaOnFilter(f)}
        GROUP BY r.id, r.name, r.archived_at
        ORDER BY r.name`,
       on.params,
@@ -216,7 +220,7 @@ router.get('/regions/:regionId', (req: Request, res: Response, next: NextFunctio
     );
     if (!region) return next(createError('Region not found', 404));
 
-    const f = parseFilters(req);
+    const f = parseFilters(req, scope);
     const on = uarOnFilters(f);
 
     const items = query(
@@ -224,7 +228,6 @@ router.get('/regions/:regionId', (req: Request, res: Response, next: NextFunctio
        FROM districts d
        LEFT JOIN user_assessment_responses uar
               ON uar.district_id = d.id AND uar.region_id = d.region_id${on.sql}
-       LEFT JOIN user_assessments ua ON ua.id = uar.user_assessment_id${uaOnFilter(f)}
        WHERE d.region_id = ?
        GROUP BY d.id, d.name, d.archived_at
        ORDER BY d.name`,
@@ -270,7 +273,7 @@ router.get('/districts/:districtId', (req: Request, res: Response, next: NextFun
     );
     if (!district) return next(createError('District not found', 404));
 
-    const f = parseFilters(req);
+    const f = parseFilters(req, scope);
     const on = uarOnFilters(f);
 
     const items = query(
@@ -278,7 +281,6 @@ router.get('/districts/:districtId', (req: Request, res: Response, next: NextFun
        FROM facilities fa
        LEFT JOIN user_assessment_responses uar
               ON uar.facility_id = fa.id${on.sql}
-       LEFT JOIN user_assessments ua ON ua.id = uar.user_assessment_id${uaOnFilter(f)}
        WHERE fa.district_id = ?
        GROUP BY fa.id, fa.name, fa.archived_at
        ORDER BY fa.name`,
@@ -317,7 +319,7 @@ router.get('/facilities/:facilityId', (req: Request, res: Response, next: NextFu
     );
     if (!facility) return next(createError('Facility not found', 404));
 
-    const f = parseFilters(req);
+    const f = parseFilters(req, scope);
     const on = uarOnFilters(f);
 
     // Every department linked to the facility (even empty ones), plus archived
@@ -329,7 +331,6 @@ router.get('/facilities/:facilityId', (req: Request, res: Response, next: NextFu
        LEFT JOIN facility_departments fd ON fd.department_id = d.id AND fd.facility_id = ?
        LEFT JOIN user_assessment_responses uar
               ON uar.department_id = d.id AND uar.facility_id = ?${on.sql}
-       LEFT JOIN user_assessments ua ON ua.id = uar.user_assessment_id${uaOnFilter(f)}
        WHERE fd.facility_id IS NOT NULL OR d.archived_at IS NOT NULL
        GROUP BY d.id, d.name, d.archived_at
        ORDER BY d.name`,
@@ -378,7 +379,7 @@ router.get('/departments/:departmentId', (req: Request, res: Response, next: Nex
       if (!facility) return next(createError('Facility not found', 404));
     }
 
-    const f = parseFilters(req);
+    const f = parseFilters(req, scope);
     const on = uarOnFilters(f);
     const facilitySql = facility ? ' AND uar.facility_id = ?' : '';
     const facilityParams: SqlValue[] = facility ? [facility.id] : [];
@@ -392,7 +393,6 @@ router.get('/departments/:departmentId', (req: Request, res: Response, next: Nex
        FROM user_assessment_responses uar
        INNER JOIN users u ON u.id = uar.user_id
        LEFT JOIN user_titles t ON t.id = u.title_id
-       LEFT JOIN user_assessments ua ON ua.id = uar.user_assessment_id${uaOnFilter(f)}
        WHERE uar.department_id = ?${facilitySql}${on.sql}
        GROUP BY u.id, u.first_name, u.last_name, u.user_name, t.name
        ORDER BY u.last_name, u.first_name`,
@@ -437,14 +437,13 @@ router.get('/users/:userId', (req: Request, res: Response, next: NextFunction) =
     );
     if (!user) return next(createError('User not found', 404));
 
-    const f = parseFilters(req);
+    const f = parseFilters(req, scope);
     const on = uarOnFilters(f);
 
     const items = query(
       `SELECT uar.competency_value,
               MAX(ai.competency_text) AS competency_text, ${COUNTS_SELECT}
        FROM user_assessment_responses uar
-       LEFT JOIN user_assessments ua ON ua.id = uar.user_assessment_id${uaOnFilter(f)}
        LEFT JOIN assessment_items ai
               ON ai.domain_id = uar.domain_id
              AND ai.competency_value = uar.competency_value
@@ -460,7 +459,6 @@ router.get('/users/:userId', (req: Request, res: Response, next: NextFunction) =
               uar.response_level, uar.response_text,
               ai.subcompetency_text, ai.competency_text, uar.created_at
        FROM user_assessment_responses uar
-       LEFT JOIN user_assessments ua ON ua.id = uar.user_assessment_id${uaOnFilter(f)}
        LEFT JOIN assessment_items ai
               ON ai.domain_id = uar.domain_id
              AND ai.competency_value = uar.competency_value
