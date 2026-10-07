@@ -1,62 +1,93 @@
 # Setup (admin)
 
-All of the reference data your user directory and reports depend on. **Admin-only.** Tabbed layout — one tab per reference type.
+All of the reference data your user directory and reports depend on. **Admin-only.** One tab per reference type, plus a country setup workbook to load or update everything at once.
+
+## Country setup workbook
+
+The quickest way to set up a country — and to keep it up to date — is one Excel workbook.
+
+- **Export setup** (top right) downloads `country-setup.xlsx` with everything that is currently active (the Users tab also includes disabled users, with their status). On a new system it is the empty template.
+- **Import workbook** uploads a filled-in workbook, previews every change, and applies all of it in one go — or nothing.
+- A worked example: [sample-country-setup.xlsx](data/sample-country-setup.xlsx). Its first Users row is the built-in admin account; keep the row for the account you are signed in as. You can add your own admin account as another row, and later disable the built-in one by setting its status to `disabled` in a subsequent import while signed in as your own account.
+
+**Before the first import:** facilities without a district cannot be exported or imported cleanly, so assign districts to every facility first.
+
+When there are no regions yet, the Setup page shows a **Get started** card with three steps: export the template, fill it in, import it.
+
+### Tabs and columns
+
+Required columns are in **bold** (shaded in the exported file). The **Read me** tab explains the rules and is ignored on import.
+
+| Tab | Columns |
+|---|---|
+| Regions | **region_code**, **region_name** |
+| Districts | **district_code**, **district_name**, **region_code** |
+| Departments | **department_code**, **department_name** |
+| Facilities | **facility_code**, **facility_name**, facility_type, **district_code**, department_codes |
+| Org Roles | **role_code**, **role_name** |
+| Job Titles | **title_code**, **title_name** |
+| Users | **email**, **first_name**, **last_name**, **national_id**, **id_type**, system_role, facility_code, department_code, org_role_code, title_code, region_codes, status, username |
+
+- `department_codes` and `region_codes` take several codes separated by `;`.
+- `id_type` is `NRC`, `Passport` or `Other`; `system_role` is `staff` (default), `admin` or `monitor`; `status` is `active` (default) or `disabled`. The exported file offers these as dropdowns.
+- `username` is filled in on export and ignored on import.
+- A facility's region always comes from its district.
+
+### How an import works
+
+- Codes and emails are matched ignoring upper/lower case. To rename something, keep its code and change the name. Changing a code removes the old item and adds a new one.
+- **Every tab you include is the complete list.** Items missing from a tab are **archived** when they have history (survey responses, or — for org roles and titles — users pointing at them) and **deleted** when they have none. Users missing from the Users tab are **disabled**, never deleted. A user whose `status` is `disabled` counts the same way as one missing from the tab.
+- **Leave a tab out** of the workbook to keep that kind of data exactly as it is.
+- A code that matches an archived item restores it.
+- Existing users keep their username and password. New users get a generated username and a temporary password. These are shown once, straight after the import, with a **Download credentials** button; each user must change the password at first login.
+
+### Preview, errors and warnings
+
+The preview has one section per tab with coloured counts (added, updated, restored, archived, deleted, disabled) and every change with its old → new values. Errors are pinned at the top with their sheet, row and column, and **Apply** stays disabled while there are any. Typical errors:
+
+- a required column or value is missing, or a value is not one of the allowed ones;
+- the same code or email appears twice, or two users share a national ID + ID type;
+- a code refers to something that is not in the workbook (or, for a tab you left out, not active in the system);
+- a user's department is not one of their facility's departments;
+- a partner (monitor) has no regions, or has a facility, department, org role or title — or a non-partner has regions;
+- something would be archived or deleted while an active user, or an item you left unchanged, still uses it;
+- the import would disable or demote you, or leave no active admin.
+
+Warnings do not block. Users being disabled — because they are missing from the Users tab or their `status` is `disabled` — are listed, and a red banner appears when more than half of a tab's existing items would be removed or disabled; that usually means the wrong file. When anything will be archived, deleted or disabled you tick a confirmation before applying. Apply checks the data again just before saving: if someone changed it between your preview and apply, the import is refused with "data changed — preview again" and nothing is saved.
 
 ## Regions
 
-Top-level geographic groupings. A facility belongs to one region; a region aggregates data across every facility in it on the **National** report.
-
-Fields: `code` (unique), `name`.
-
-CSV import columns: `region_code,region_name`.
+Top-level geographic groupings; a region aggregates every facility in it on the **National** report. Fields: `code` (unique), `name`. A region with districts, or assigned to a partner user, can't be deleted.
 
 ## Districts
 
-Sit between regions and facilities. Each district belongs to exactly one region, and every facility belongs to exactly one district — the facility's region is taken from its district.
+Each district belongs to exactly one region, and every facility belongs to exactly one district.
 
 - A district with facilities can't be deleted; reassign the facilities first.
-- A region with districts can't be deleted.
 - Moving a district to another region moves its facilities with it (historical responses keep the region they were submitted under).
-
-CSV import columns: `district_code,district_name,region_code`.
 
 ## Facilities
 
-Individual labs / health facilities. Each facility:
-
-- Belongs to a **district** (required; the region is derived from it)
-- Links to **multiple departments** (many-to-many via the form's multi-select)
-- Has a `facility_type` (free text — e.g. *"Reference lab"*, *"Provincial hospital"*)
-
-CSV import columns: `facility_code,facility_name,facility_type,district_code,region_code` — `district_code` is required; `region_code` is optional and must match the district's region. Importing a code that already exists updates only that facility's district, which is the quickest way to assign districts to existing facilities.
+Individual labs / health facilities. Each facility belongs to a **district** (the region is derived from it), links to **several departments**, and has a free-text `facility_type` (e.g. *"Reference lab"*).
 
 ## Departments
 
-Functional units — e.g. *Microbiology*, *Bioinformatics*, *Administration*. Shared across facilities; link a department to a facility via the Facility form's multi-select.
-
-CSV import columns: `department_code,department_name`.
+Functional units — e.g. *Microbiology*, *Administration*. Shared across facilities; a facility lists the departments it has. Department names must be unique.
 
 ## Org roles
 
-Broad organisational roles — e.g. *"Laboratory Technician"*, *"Section Head"*, *"Quality Officer"*. Used as a filterable facet on the Users page.
+Broad organisational roles — e.g. *"Laboratory Technician"*, *"Quality Officer"*.
 
-CSV import columns: `role_code,role_name`.
+## Job titles
 
-## User titles
+Titles such as *Dr.* or *Ms.*, shown in the Department-level report.
 
-Job titles — narrower than org role. Used for display in the Department-level report's breakdown table.
+## Archived items
 
-CSV import columns: `title_code,title_name`.
+Archived items keep their history in reports (labelled "(archived)" there, while they have respondents) but disappear from lists and pickers. Turn on **Show archived** above a table to see them greyed out; archived rows are read-only. To bring one back, include its code in the country setup workbook again and import.
 
-## Order of operations
+## Editing one record
 
-When setting up a fresh install:
+**Add** and the pencil icon edit a single record in place. Use the workbook for bulk changes.
 
-1. **Regions** (nothing depends on this)
-2. **Districts** (needs regions)
-3. **Facilities** (needs districts)
-4. **Departments** (standalone, or link to facilities afterward)
-5. **Org roles** and **User titles** (standalone)
-6. **Users** (can now pick facility + department + role + title)
-
-Same order for CSV bulk import.
+Deleting a single region, district, facility or department that has past assessment data, or an org role or title that is still assigned to users, is refused. Remove it from the workbook instead, so it is archived and its history is kept.

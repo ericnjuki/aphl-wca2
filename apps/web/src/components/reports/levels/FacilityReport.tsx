@@ -7,6 +7,7 @@ import { MaturityBreakdownTable } from '../MaturityBreakdownTable';
 import { ChartSkeleton } from '../ChartSkeleton';
 import { ReportKpiCards } from '../ReportKpiCards';
 import { UnassignedBanner } from '../UnassignedBanner';
+import { archivedLabel } from '@/lib/reports/archived';
 
 const ENV = import.meta.env;
 const baseUrl = ENV.VITE_BASE_URL || '/';
@@ -45,7 +46,7 @@ export function FacilityReport({ facilityId }: Props) {
           <MaturityStackedBar
             data={data.items.map((r) => ({
               key: String(r.department_id),
-              label: r.department_name,
+              label: archivedLabel(r.department_name, r.archived),
               ...r,
             }))}
             onBarClick={openDepartment}
@@ -54,7 +55,7 @@ export function FacilityReport({ facilityId }: Props) {
         </div>
       </div>
       <MaturityBreakdownTable
-        rows={data.items.map((r) => ({ key: String(r.department_id), label: r.department_name, ...r }))}
+        rows={data.items.map((r) => ({ key: String(r.department_id), label: archivedLabel(r.department_name, r.archived), ...r }))}
         onRowClick={openDepartment}
         labelHeader="Department"
       />

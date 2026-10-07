@@ -32,8 +32,8 @@ test.describe("Survey UX tweaks", () => {
     const inf = domains.find((d: { code: string }) => d.code === "INF");
     test.skip(!inf, "Informatics domain not seeded in this environment");
 
-    // Seed intro (via update) + footnotes (via import). The quoted comma in
-    // the footnote definition also exercises the CSV parser.
+    // Seed intro (via update) + a footnote (via the footnote endpoint). The comma in
+    // the definition checks that punctuation survives to the survey.
     const upd = await page.request.put(`/api/assessments/domains/${inf.id}`, {
       data: {
         purpose: "Purpose: applies information science to public health practice, research, and learning.",
@@ -42,8 +42,8 @@ test.describe("Survey UX tweaks", () => {
     });
     expect(upd.ok(), await upd.text()).toBeTruthy();
 
-    const imp = await page.request.post(`/api/assessments/domains/${inf.id}/footnotes/import`, {
-      data: { csv: 'symbol,definition,sort_order\n*,"Defined in Appendix B, the glossary.",1\n' },
+    const imp = await page.request.post(`/api/assessments/domains/${inf.id}/footnotes`, {
+      data: { symbol: "*", definition: "Defined in Appendix B, the glossary.", sort_order: 1 },
     });
     expect(imp.ok(), await imp.text()).toBeTruthy();
 

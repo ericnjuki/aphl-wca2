@@ -5,8 +5,8 @@ import { Router, Request, Response, NextFunction } from 'express';
 import { query, execute, transaction } from '../db/database';
 import { requireAdmin } from '../middleware/auth';
 import { createError } from '../middleware/errorHandler';
-import { parseCsv } from '../lib/csv';
 import { syncFacilitiesRegion } from '../lib/org';
+import { assertNoHistory } from '../lib/history';
 
 interface DistrictRow extends Record<string, unknown> {
   id: number; code: string; name: string; region_id: number;
@@ -24,13 +24,16 @@ function regionExists(raw: unknown): number | null {
   return row ? row.id : null;
 }
 
-router.get('/', (_req, res: Response, next: NextFunction) => {
+// Active districts unless ?include_archived=1; facility_count counts active facilities.
+router.get('/', (req: Request, res: Response, next: NextFunction) => {
   try {
+    const all = req.query.include_archived === '1' || req.query.include_archived === 'true';
     const districts = query(`
       SELECT d.*, r.name AS region_name, COUNT(f.id) AS facility_count
       FROM districts d
       LEFT JOIN regions r    ON r.id = d.region_id
-      LEFT JOIN facilities f ON f.district_id = d.id
+      LEFT JOIN facilities f ON f.district_id = d.id AND f.archived_at IS NULL
+      ${all ? '' : 'WHERE d.archived_at IS NULL'}
       GROUP BY d.id
       ORDER BY r.name ASC, d.name ASC
     `);
@@ -90,50 +93,12 @@ router.delete('/:id', requireAdmin, (req: Request, res: Response, next: NextFunc
     const id = Number(req.params.id);
     const [existing] = query<DistrictRow>('SELECT id FROM districts WHERE id = ?', [id]);
     if (!existing) return next(createError('District not found', 404));
+    assertNoHistory('districts', id);
     const [{ n }] = query<{ n: number }>('SELECT COUNT(*) AS n FROM facilities WHERE district_id = ?', [id]);
     if (n > 0)
       return next(createError(`${plural(n, 'facility is', 'facilities are')} still assigned to this district`, 409));
     execute('DELETE FROM districts WHERE id = ?', [id]);
     res.json({ message: 'Deleted' });
-  } catch (err) { next(err); }
-});
-
-router.post('/import', requireAdmin, (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const { csv } = req.body as { csv?: string };
-    if (!csv) return next(createError('csv is required', 400));
-    const { headers, rows } = parseCsv(csv);
-    const ci = (h: string) => headers.indexOf(h);
-    if (ci('district_code') === -1 || ci('district_name') === -1 || ci('region_code') === -1)
-      return next(createError('CSV must have district_code, district_name and region_code columns', 400));
-
-    let imported = 0;
-    const errors: { row: number; reason: string }[] = [];
-    transaction(() => {
-      rows.forEach((row, i) => {
-        const line = i + 2; // header is line 1
-        const code = row[ci('district_code')]?.toUpperCase();
-        const name = row[ci('district_name')];
-        const regionCode = row[ci('region_code')];
-        if (!code || !name || !regionCode) {
-          errors.push({ row: line, reason: 'district_code, district_name and region_code are required' });
-          return;
-        }
-        const [region] = query<{ id: number }>('SELECT id FROM regions WHERE code = ? COLLATE NOCASE', [regionCode]);
-        if (!region) { errors.push({ row: line, reason: `Unknown region_code "${regionCode}"` }); return; }
-        try {
-          execute('INSERT INTO districts (code, name, region_id) VALUES (?, ?, ?)', [code, name, region.id]);
-          imported++;
-        } catch (e: unknown) {
-          if (e instanceof Error && e.message.includes('UNIQUE')) {
-            errors.push({ row: line, reason: `District code "${code}" already exists` });
-          } else {
-            throw e;
-          }
-        }
-      });
-    });
-    res.json({ imported, skipped: errors.length, errors });
   } catch (err) { next(err); }
 });
 

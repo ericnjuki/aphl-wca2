@@ -1,18 +1,19 @@
 import fs from 'fs';
 import path from 'path';
 import { query, execute, transaction } from './database';
-import { parseCsv } from '../lib/csv';
+import { CAT_TAB, ParsedCatalogue, readCatalogueWorkbook, usableRows } from '../lib/workbook/catalogue';
+import type { SheetRow } from '../lib/workbook/reader';
 
 /**
  * Seeds the assessment catalogue — domains, competency items and footnotes —
- * from the CSV files bundled in `seed-data/`, so a fresh install already has
- * the full catalogue without an admin importing anything by hand.
+ * from the workbook bundled at `seed-data/assessment-catalogue.xlsx`, so a
+ * fresh install already has the full catalogue.
  *
  * Seeding is additive and never destructive. A domain is inserted only when
  * its code is absent, its items only when it has none, and its footnotes only
- * when it has none. Restarting an already-populated instance is therefore a
- * no-op, and content edited through the admin UI is never overwritten. The
- * admin import routes remain the way to push updated content.
+ * when it has none. Restarting a populated instance is therefore a no-op, and
+ * content edited through the admin UI is never overwritten. Admins push
+ * updated content with the catalogue workbook import on the Assessments page.
  */
 
 // dist/db/ and src/db/ sit at the same depth, so this resolves in both the
@@ -20,223 +21,108 @@ import { parseCsv } from '../lib/csv';
 const SEED_DIR = path.resolve(
   process.env.SEED_DATA_PATH ?? path.join(__dirname, '../../seed-data'),
 );
+export const CATALOGUE_FILE = 'assessment-catalogue.xlsx';
 
-interface DomainRow extends Record<string, unknown> {
-  id: number;
-  code: string;
-  name: string;
+function domainIdOf(code: string): number | null {
+  const [row] = query<{ id: number }>('SELECT id FROM assessment_domains WHERE code = ? COLLATE NOCASE', [code]);
+  return row?.id ?? null;
 }
 
-/** Reads a CSV from the seed directory, or returns null when it is absent. */
-function readSeedCsv(relPath: string): { headers: string[]; rows: string[][] } | null {
-  const file = path.join(SEED_DIR, relPath);
-  if (!fs.existsSync(file)) {
-    console.warn(`[seed:assessments] missing ${relPath} — skipped`);
-    return null;
-  }
-  return parseCsv(fs.readFileSync(file, 'utf8'));
+function countFor(table: 'assessment_items' | 'assessment_footnotes', domainId: number): number {
+  return query<{ n: number }>(`SELECT COUNT(*) AS n FROM ${table} WHERE domain_id = ?`, [domainId])[0].n;
 }
 
-/** Builds a `header -> value` accessor for one row, defaulting to ''. */
-function rowReader(headers: string[], row: string[]) {
-  return (header: string): string => {
-    const i = headers.indexOf(header);
-    return i === -1 ? '' : (row[i] ?? '');
-  };
+/** Rows grouped by upper-cased domain_code, in sheet order. */
+function groupByDomain(rows: SheetRow[]): Map<string, SheetRow[]> {
+  const out = new Map<string, SheetRow[]>();
+  for (const r of rows) {
+    const code = r.values.domain_code.toUpperCase();
+    out.set(code, [...(out.get(code) ?? []), r]);
+  }
+  return out;
 }
 
-/**
- * Pass 1 — domains from assessment_data.csv. Existing codes are left exactly
- * as they are, including any name/purpose/introduction edited by an admin.
- */
-function seedDomains(): number {
-  const parsed = readSeedCsv('assessment_data.csv');
-  if (!parsed) return 0;
-  const { headers, rows } = parsed;
-
-  if (!headers.includes('assessment_code') || !headers.includes('assessment_name')) {
-    console.warn('[seed:assessments] assessment_data.csv lacks assessment_code/assessment_name — skipped');
-    return 0;
-  }
-
-  let inserted = 0;
-  for (const row of rows) {
-    const get = rowReader(headers, row);
-    const code = get('assessment_code').toUpperCase();
-    const name = get('assessment_name');
-    if (!code || !name) continue;
-
-    const [existing] = query<DomainRow>(
-      'SELECT id FROM assessment_domains WHERE code = ? COLLATE NOCASE',
-      [code],
-    );
-    if (existing) continue;
-
-    execute(
-      'INSERT INTO assessment_domains (code, name, purpose, introduction) VALUES (?, ?, ?, ?)',
-      [code, name, get('purpose') || null, get('introduction') || null],
-    );
-    inserted++;
-  }
-  return inserted;
-}
-
-/**
- * Pass 2 — competency items from seed-data/assessments/*.csv.
- *
- * Each file carries its own domain in the `code` column, so a file is mapped
- * to its domain by that value rather than by filename. A file whose code is
- * unknown, or whose rows disagree on the code, is reported and skipped instead
- * of being attached to the wrong domain.
- */
-function seedItems(): { files: number; items: number } {
-  const dir = path.join(SEED_DIR, 'assessments');
-  if (!fs.existsSync(dir)) {
-    console.warn('[seed:assessments] missing assessments/ directory — skipped');
-    return { files: 0, items: 0 };
-  }
-
-  const required = ['competency_value', 'competency_text', 'subcompetency_value', 'subcompetency_text'];
-  let files = 0;
+/** Insert-only seeding from a parsed catalogue workbook. Call inside a transaction. */
+export function seedCatalogue(parsed: ParsedCatalogue): { domains: number; items: number; footnotes: number } {
+  let domains = 0;
   let items = 0;
+  let footnotes = 0;
 
-  const filenames = fs.readdirSync(dir).filter((f) => f.toLowerCase().endsWith('.csv')).sort();
-  for (const filename of filenames) {
-    const { headers, rows } = parseCsv(fs.readFileSync(path.join(dir, filename), 'utf8'));
-    if (!rows.length) continue;
-
-    const missing = required.filter((h) => !headers.includes(h));
-    if (missing.length) {
-      console.warn(`[seed:assessments] ${filename}: missing column(s) ${missing.join(', ')} — skipped`);
-      continue;
-    }
-    if (!headers.includes('code')) {
-      console.warn(`[seed:assessments] ${filename}: no 'code' column to map it to a domain — skipped`);
-      continue;
-    }
-
-    // Every row must name the same domain; a mixed file is a data error.
-    const codes = new Set(rows.map((r) => rowReader(headers, r)('code').toUpperCase()).filter(Boolean));
-    if (codes.size !== 1) {
-      const found = codes.size ? [...codes].join(', ') : 'none';
-      console.warn(`[seed:assessments] ${filename}: expected one domain code, found ${found} — skipped`);
-      continue;
-    }
-    const code = [...codes][0];
-
-    const [domain] = query<DomainRow>(
-      'SELECT id, code FROM assessment_domains WHERE code = ? COLLATE NOCASE',
-      [code],
+  for (const r of usableRows(parsed[CAT_TAB.domains])) {
+    const code = r.values.domain_code.toUpperCase();
+    if (domainIdOf(code) !== null) continue;
+    const version = Number(r.values.version);
+    execute(
+      'INSERT INTO assessment_domains (code, name, version, purpose, introduction) VALUES (?, ?, ?, ?, ?)',
+      [code, r.values.domain_name, Number.isInteger(version) && version > 0 ? version : 1,
+       r.values.purpose || null, r.values.introduction || null],
     );
-    if (!domain) {
-      console.warn(`[seed:assessments] ${filename}: domain '${code}' not in assessment_data.csv — skipped`);
+    domains++;
+  }
+
+  for (const [code, rows] of groupByDomain(usableRows(parsed[CAT_TAB.items]))) {
+    const domain = domainIdOf(code);
+    if (domain === null) {
+      console.warn(`[seed:assessments] items for unknown domain '${code}' — skipped`);
       continue;
     }
-
-    const [{ n }] = query<{ n: number }>(
-      'SELECT COUNT(*) AS n FROM assessment_items WHERE domain_id = ?',
-      [domain.id],
-    );
-    if (n > 0) continue; // already populated — leave it alone
-
-    for (let i = 0; i < rows.length; i++) {
-      const get = rowReader(headers, rows[i]);
+    if (countFor('assessment_items', domain) > 0) continue; // already populated — leave it alone
+    rows.forEach((r, i) => {
+      const v = r.values;
       execute(
         `INSERT INTO assessment_items
            (domain_id, competency_value, competency_text, subcompetency_value, subcompetency_text,
             beginner, competent, proficient, expert, na, sort_order)
          VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
-        [domain.id, get('competency_value'), get('competency_text'),
-         get('subcompetency_value'), get('subcompetency_text'),
-         get('beginner'), get('competent'), get('proficient'), get('expert'), get('na'), i],
+        [domain, v.competency_value, v.competency_text, v.subcompetency_value, v.subcompetency_text,
+         v.beginner, v.competent, v.proficient, v.expert, v.na, i],
       );
       items++;
-    }
-    files++;
-    console.log(`[seed:assessments] ${code}: ${rows.length} items from ${filename}`);
+    });
   }
 
-  return { files, items };
-}
-
-/**
- * Pass 3 — footnotes from footnotes.csv, grouped by `domain_code`. A domain
- * that already has footnotes keeps them.
- */
-function seedFootnotes(): number {
-  const parsed = readSeedCsv('footnotes.csv');
-  if (!parsed) return 0;
-  const { headers, rows } = parsed;
-
-  const missing = ['domain_code', 'symbol', 'definition'].filter((h) => !headers.includes(h));
-  if (missing.length) {
-    console.warn(`[seed:assessments] footnotes.csv: missing column(s) ${missing.join(', ')} — skipped`);
-    return 0;
-  }
-
-  const byCode = new Map<string, string[][]>();
-  for (const row of rows) {
-    const code = rowReader(headers, row)('domain_code').toUpperCase();
-    if (!code) continue;
-    const bucket = byCode.get(code);
-    if (bucket) bucket.push(row);
-    else byCode.set(code, [row]);
-  }
-
-  let inserted = 0;
-  for (const [code, group] of byCode) {
-    const [domain] = query<DomainRow>(
-      'SELECT id FROM assessment_domains WHERE code = ? COLLATE NOCASE',
-      [code],
-    );
-    if (!domain) {
-      console.warn(`[seed:assessments] footnotes.csv: unknown domain '${code}' — skipped`);
+  for (const [code, rows] of groupByDomain(usableRows(parsed[CAT_TAB.footnotes]))) {
+    const domain = domainIdOf(code);
+    if (domain === null) {
+      console.warn(`[seed:assessments] footnotes for unknown domain '${code}' — skipped`);
       continue;
     }
-
-    const [{ n }] = query<{ n: number }>(
-      'SELECT COUNT(*) AS n FROM assessment_footnotes WHERE domain_id = ?',
-      [domain.id],
-    );
-    if (n > 0) continue;
-
-    for (let i = 0; i < group.length; i++) {
-      const get = rowReader(headers, group[i]);
-      const symbol = get('symbol');
-      const definition = get('definition');
-      if (!symbol || !definition) continue;
-      const sortOrder = Number(get('sort_order'));
+    if (countFor('assessment_footnotes', domain) > 0) continue;
+    rows.forEach((r, i) => {
+      const raw = r.values.sort_order;
+      const sort = raw !== '' && Number.isFinite(Number(raw)) ? Number(raw) : i;
       execute(
         'INSERT INTO assessment_footnotes (domain_id, symbol, definition, sort_order) VALUES (?, ?, ?, ?)',
-        [domain.id, symbol, definition, Number.isFinite(sortOrder) ? sortOrder : i],
+        [domain, r.values.symbol, r.values.definition, sort],
       );
-      inserted++;
-    }
+      footnotes++;
+    });
   }
-  return inserted;
+
+  return { domains, items, footnotes };
 }
 
-export function seedAssessments(): void {
-  if (!fs.existsSync(SEED_DIR)) {
-    console.warn(`[seed:assessments] seed directory not found at ${SEED_DIR} — nothing seeded`);
+export async function seedAssessments(): Promise<void> {
+  const file = path.join(SEED_DIR, CATALOGUE_FILE);
+  if (!fs.existsSync(file)) {
+    console.warn(`[seed:assessments] ${file} not found — nothing seeded`);
     return;
+  }
+  const parsed = await readCatalogueWorkbook(fs.readFileSync(file));
+  for (const [name, tab] of Object.entries(parsed)) {
+    if (tab && tab.errors.length) {
+      console.warn(`[seed:assessments] ${name}: ${tab.errors.length} problem(s) in the bundled workbook — those rows skipped`);
+    }
   }
 
   // One transaction for the whole catalogue: sql.js serialises the entire
-  // database to disk on every write made outside a transaction, and this is
-  // ~500 item rows.
-  const { domains, files, items, footnotes } = transaction(() => {
-    const domains = seedDomains();
-    const counts = seedItems();
-    const footnotes = seedFootnotes();
-    return { domains, files: counts.files, items: counts.items, footnotes };
-  });
-
-  if (domains + items + footnotes === 0) {
+  // database to disk on every write made outside a transaction.
+  const counts = transaction(() => seedCatalogue(parsed));
+  if (counts.domains + counts.items + counts.footnotes === 0) {
     console.log('[seed:assessments] already up-to-date');
     return;
   }
   console.log(
-    `[seed:assessments] seeded ${domains} domain(s), ${items} item(s) across ${files} file(s), ${footnotes} footnote(s)`,
+    `[seed:assessments] seeded ${counts.domains} domain(s), ${counts.items} item(s), ${counts.footnotes} footnote(s)`,
   );
 }

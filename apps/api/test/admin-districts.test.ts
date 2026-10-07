@@ -93,33 +93,4 @@ describe('/admin/districts', () => {
     const ok = await request(app).delete(`/admin/regions/${mwz}`).set(asUser(admin));
     expect(ok.status).toBe(200);
   });
-
-  it('imports districts from CSV and reports skipped rows with reasons', async () => {
-    createDistrict('TMK', 'Temeke', dsm);
-    const csv = [
-      'district_code,district_name,region_code',
-      'ila,Ilala,dsm',
-      'NYA,Nyamagana,MWZ',
-      'XXX,Nowhere,ZZZ',
-      'TMK,Temeke again,DSM',
-      ',Missing code,DSM',
-    ].join('\n');
-    const res = await request(app).post('/admin/districts/import').set(asUser(admin)).send({ csv });
-    expect(res.status).toBe(200);
-    expect(res.body).toEqual({
-      imported: 2,
-      skipped: 3,
-      errors: [
-        { row: 4, reason: 'Unknown region_code "ZZZ"' },
-        { row: 5, reason: 'District code "TMK" already exists' },
-        { row: 6, reason: 'district_code, district_name and region_code are required' },
-      ],
-    });
-  });
-
-  it('rejects an import missing required columns', async () => {
-    const res = await request(app).post('/admin/districts/import').set(asUser(admin))
-      .send({ csv: 'district_code,district_name\nA,B' });
-    expect(res.status).toBe(400);
-  });
 });

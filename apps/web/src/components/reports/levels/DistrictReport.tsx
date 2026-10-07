@@ -6,6 +6,7 @@ import { MaturityBreakdownTable } from '../MaturityBreakdownTable';
 import { ChartSkeleton } from '../ChartSkeleton';
 import { ReportKpiCards } from '../ReportKpiCards';
 import { UnassignedBanner } from '../UnassignedBanner';
+import { archivedLabel } from '@/lib/reports/archived';
 
 const ENV = import.meta.env;
 const baseUrl = ENV.VITE_BASE_URL || '/';
@@ -37,14 +38,14 @@ export function DistrictReport({ districtId }: Props) {
         </div>
         <div id="report-bar-chart" className="p-3">
           <MaturityStackedBar
-            data={data.items.map((r) => ({ key: String(r.facility_id), label: r.facility_name, ...r }))}
+            data={data.items.map((r) => ({ key: String(r.facility_id), label: archivedLabel(r.facility_name, r.archived), ...r }))}
             onBarClick={(key) => navigate(`${baseUrl}reports/facilities/${key}`)}
             emptyText="No facilities in this district"
           />
         </div>
       </div>
       <MaturityBreakdownTable
-        rows={data.items.map((r) => ({ key: String(r.facility_id), label: r.facility_name, ...r }))}
+        rows={data.items.map((r) => ({ key: String(r.facility_id), label: archivedLabel(r.facility_name, r.archived), ...r }))}
         onRowClick={(key) => navigate(`${baseUrl}reports/facilities/${key}`)}
         labelHeader="Facility"
       />

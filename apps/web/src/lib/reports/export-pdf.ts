@@ -6,6 +6,7 @@ import autoTable, { RowInput } from 'jspdf-autotable';
 import { toPng } from 'html-to-image';
 import { suppressionText } from './privacy';
 import type { AnyReport, MaturityCounts } from '@/types/reports';
+import { archivedLabel } from './archived';
 
 function titleFor(r: AnyReport): string {
   switch (r.level) {
@@ -36,28 +37,28 @@ function breakdownHeadRows(r: AnyReport): { head: string[][]; body: RowInput[] }
       return {
         head: [['Region', 'Respondents', 'Avg', ...levels]],
         body: r.items.map((i) => [
-          i.region_name, ...countCells(i),
+          archivedLabel(i.region_name, i.archived), ...countCells(i),
         ]),
       };
     case 'region':
       return {
         head: [['District', 'Respondents', 'Avg', ...levels]],
         body: r.items.map((i) => [
-          i.district_name, ...countCells(i),
+          archivedLabel(i.district_name, i.archived), ...countCells(i),
         ]),
       };
     case 'district':
       return {
         head: [['Facility', 'Respondents', 'Avg', ...levels]],
         body: r.items.map((i) => [
-          i.facility_name, ...countCells(i),
+          archivedLabel(i.facility_name, i.archived), ...countCells(i),
         ]),
       };
     case 'facility':
       return {
         head: [['Department', 'Respondents', 'Avg', ...levels]],
         body: r.items.map((i) => [
-          i.department_name, ...countCells(i),
+          archivedLabel(i.department_name, i.archived), ...countCells(i),
         ]),
       };
     case 'department':
