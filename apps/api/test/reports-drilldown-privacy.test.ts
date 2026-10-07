@@ -335,4 +335,53 @@ describe('partner drill-down privacy', () => {
       expect((await get(`/reports/facilities/${orphan}`, partner)).body.meta.privacy_hidden).toBeFalsy();
     });
   });
+
+  // District level: respondents in the district's total but in no facility row
+  // form a remainder that must take part in suppression too.
+  describe('district remainder', () => {
+    const setup = () => {
+      const a = createDistrict('A', 'Alpha', region);
+      const b = createDistrict('B', 'Beta', region);
+      const f1 = createFacility('F1', 'Alpha One', { regionId: region, districtId: a });
+      const f2 = createFacility('F2', 'Alpha Two', { regionId: region, districtId: a });
+      respond(4, f1, a); respond(5, f2, a);
+      return { a, b, f1, f2 };
+    };
+    const rowOf = (items: any[], id: number) => items.find((i) => i.facility_id === id);
+
+    it('hides a complementary facility when 1-2 no-facility respondents form the remainder', async () => {
+      const { a, f1, f2 } = setup();
+      for (let i = 0; i < 2; i++) addResponse({ userId: createUser(), regionId: region, districtId: a });
+
+      const res = await get(`/reports/districts/${a}`, partner);
+      expect(res.body.meta.privacy_hidden).toBeFalsy();
+      expect(rowOf(res.body.items, f1).suppressed).toBe('complementary');
+      expect(rowOf(res.body.items, f2).suppressed).toBeUndefined();
+      expect(res.body.meta.unassigned_respondents).toBe(0);
+      expectHidden((await get(`/reports/facilities/${f1}`, partner)).body);
+
+      const asAdmin = await get(`/reports/districts/${a}`, admin);
+      expect(asAdmin.body.meta.unassigned_respondents).toBe(2);
+      expect(rowOf(asAdmin.body.items, f1).suppressed).toBeUndefined();
+    });
+
+    it('does the same for old snapshots of a facility that moved to another district', async () => {
+      const { a, b, f1, f2 } = setup();
+      const moved = createFacility('FM', 'Moved Clinic', { regionId: region, districtId: b });
+      for (let i = 0; i < 2; i++) {
+        addResponse({ userId: createUser({ facilityId: moved }), facilityId: moved, regionId: region, districtId: a });
+      }
+      const res = await get(`/reports/districts/${a}`, partner);
+      expect(rowOf(res.body.items, f1).suppressed).toBe('complementary');
+      expect(rowOf(res.body.items, f2).suppressed).toBeUndefined();
+    });
+
+    it('changes nothing when there is no remainder', async () => {
+      const { a, f1, f2 } = setup();
+      const res = await get(`/reports/districts/${a}`, partner);
+      expect(rowOf(res.body.items, f1).suppressed).toBeUndefined();
+      expect(rowOf(res.body.items, f2).suppressed).toBeUndefined();
+      expect(res.body.meta.unassigned_respondents).toBe(0);
+    });
+  });
 });

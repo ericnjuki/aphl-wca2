@@ -282,9 +282,15 @@ function regionDistrictList(
   };
 }
 
-// At district level the no-facility group is never openable as a report, so it
-// needs no pseudo-row here (unlike regionDistrictList).
-function districtFacilityItems(scope: Scope, f: CommonFilters, district: DistrictRef): Record<string, unknown>[] {
+// District level, partners: respondents counted in the district (district
+// placement) but in no facility row (facility placement) - no facility, or old
+// snapshots of a facility that moved away - form ONE remainder pseudo-row. It
+// is never openable, but with all facility rows visible `district row - facility
+// rows` would expose a 1-2 person remainder, so it takes part in
+// small/complementary decisions (not added to items).
+function districtFacilityList(
+  scope: Scope, f: CommonFilters, district: DistrictRef,
+): { items: Record<string, unknown>[]; remainderHidden: boolean } {
   const on = uarOnFilters(f);
   const fp = facilityPlacement(scope, 'fa');
   const items = query(
@@ -298,7 +304,22 @@ function districtFacilityItems(scope: Scope, f: CommonFilters, district: Distric
      ORDER BY fa.name`,
     [...fp.params, ...on.params, district.id],
   );
-  return suppressSmallGroups(scope, withArchived(items));
+  const rows = withArchived(items);
+  if (scope.role !== 'monitor') return { items: rows, remainderHidden: false };
+
+  const dp = districtPlacement(scope, district);
+  const covered = facilityPlacement(scope, 'fa');
+  const whereParts: string[] = [
+    dp.sql,
+    `NOT EXISTS (SELECT 1 FROM facilities fa WHERE fa.district_id = ? AND ${covered.sql})`,
+  ];
+  const whereParams: SqlValue[] = [...dp.params, district.id, ...covered.params];
+  if (f.domainCode)      { whereParts.push('uar.domain_code = ?');      whereParams.push(f.domainCode); }
+  if (f.competencyValue) { whereParts.push('uar.competency_value = ?'); whereParams.push(f.competencyValue); }
+  const remainder = respondentCounts('WHERE ' + whereParts.join(' AND '), whereParams, f, 'facility_id').total;
+
+  const all = suppressSmallGroups(scope, [...rows, { respondents: remainder } as Record<string, unknown>]);
+  return { items: all.slice(0, -1), remainderHidden: all[all.length - 1].suppressed !== undefined };
 }
 
 // ── Privacy-hidden reports ────────────────────────────────────────────────────
@@ -321,7 +342,7 @@ function isFacilityPrivacyHidden(scope: Scope, f: CommonFilters, facility: Facil
   }
   const [district] = query<{ id: number; region_id: number | null }>('SELECT id, region_id FROM districts WHERE id = ?', [facility.district_id]);
   if (!district) return false;
-  const row = districtFacilityItems(scope, f, district).find((i) => i.facility_id === facility.id);
+  const row = districtFacilityList(scope, f, district).items.find((i) => i.facility_id === facility.id);
   return row?.suppressed !== undefined || isDistrictPrivacyHidden(scope, f, district);
 }
 
@@ -429,7 +450,7 @@ router.get('/districts/:districtId', (req: Request, res: Response, next: NextFun
 
     const f = parseFilters(req);
 
-    const items = districtFacilityItems(scope, f, district);
+    const { items, remainderHidden } = districtFacilityList(scope, f, district);
 
     const dp = districtPlacement(scope, district);
     const whereParts: string[] = [dp.sql];
@@ -443,7 +464,7 @@ router.get('/districts/:districtId', (req: Request, res: Response, next: NextFun
       return res.json({ level: 'district', district, items: blankItems(items), meta: hiddenMeta(f) });
     }
 
-    res.json({ level: 'district', district, items, meta: meta(f, counts.total, counts.unassigned, viewAvg(scope, counts)) });
+    res.json({ level: 'district', district, items, meta: meta(f, counts.total, remainderHidden ? 0 : counts.unassigned, viewAvg(scope, counts)) });
   } catch (err) { next(err); }
 });
 
