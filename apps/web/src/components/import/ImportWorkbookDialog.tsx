@@ -282,8 +282,9 @@ export function ImportWorkbookDialog({
                 <>
                   <p className="text-sm text-muted-foreground">
                     {result.credentials.length} new user{result.credentials.length === 1 ? " was" : "s were"} created.
-                    Download their temporary passwords now — this list is shown only once. Each user must change the
-                    password at first login.
+                    Download their temporary passwords now — this list closes when you leave this screen; the
+                    temporary passwords also stay on the Users page until each user's first login. Each user must
+                    change the password at first login.
                   </p>
                   <div className="max-h-64 overflow-y-auto rounded-md border">
                     <Table>

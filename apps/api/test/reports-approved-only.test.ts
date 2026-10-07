@@ -141,14 +141,22 @@ describe('approved_only report filter', () => {
       f3 = createFacility('F3', 'Kigamboni Clinic', { regionId: dsm, districtId: kgm });
       monitor = createUser({ role: 'monitor' });
       assignRegions(monitor, [dsm]);
+      // Give Temeke enough approved respondents (with the one above) that it is
+      // not itself hidden in the region list, so Kigamboni's own count decides.
+      for (let i = 0; i < 3; i++) {
+        addResponse({ userId: createUser({ facilityId: f1 }), facilityId: f1, regionId: dsm, districtId: tmk, departmentId: lab, level: 3 });
+      }
     });
 
     it('suppresses a row whose approved respondents are a small group', async () => {
       fill(2, 3);
+      // Only the 2 approved respondents count, so Kigamboni is a small row in the
+      // region list and (being hidden there) its own report is privacy hidden.
+      const regionRes = await get(`/reports/regions/${dsm}`, monitor);
+      expect(row(regionRes.body.items, 'district_id', kgm)).toMatchObject({ suppressed: 'small', respondents: 0 });
       const res = await get(`/reports/districts/${kgm}`, monitor);
       expect(res.status).toBe(200);
-      expect(row(res.body.items, 'facility_id', f3)).toMatchObject({ suppressed: 'small', respondents: 0 });
-      expect(res.body.meta).toMatchObject({ total_respondents: 2, avg_level: null });
+      expect(res.body.meta).toMatchObject({ privacy_hidden: true, total_respondents: 0, avg_level: null });
     });
 
     it('does not suppress a row with enough approved respondents', async () => {

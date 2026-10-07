@@ -32,15 +32,23 @@ assessed themselves — for example an NGO partner supporting a project.
 - Partners never open department or individual reports, and cannot take
   assessments.
 - To protect individuals, any department, facility or district with only 1 or
-  2 respondents shows as "Fewer than 3 respondents" for partners. When that
-  would leave a single hidden row in a list, one more row is hidden ("Hidden
-  for privacy") so the hidden results are harder to work out from the totals in a list.
+  2 respondents shows as "Fewer than 3 respondents" for partners. Hiding then
+  continues ("Hidden for privacy") until the hidden rows together cover at least
+  3 people, so they can't be worked out by subtraction from the totals in a list.
   This applies on screen and in exports. Admins and staff still see the numbers.
 - Partners only see approved submissions. The **Approved only** switch is
   locked on for them, and pending or rejected submissions are never counted in
   their reports or exports. Approving a submission adds it to what partners see.
-- Region, district and facility reports use each facility's **current** region:
-  if a facility moves to another region, its past responses move with it.
+- A district or facility that is hidden in its list can't be opened to read it
+  either: its report opens with a "hidden for privacy" notice and no figures.
+- For partners, a result counts only where it was recorded relative to each
+  place's current location, so older results from districts or facilities that
+  have since moved are held back, and the "unassigned" figure may show 0.
+  (For admins and staff, past responses follow a moved facility within district
+  and facility reports, but region-level figures keep the region they were recorded in.)
+- Known limit: comparing the same place with and without a domain or competency
+  filter can narrow down small groups, so partner access should go to trusted
+  organisations.
 - Partners cannot open the national report.
 - A region can't be deleted while a partner is assigned to it — remove it from
   the partner first.

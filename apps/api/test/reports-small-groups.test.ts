@@ -41,6 +41,16 @@ describe('small-group suppression for partner users', () => {
     // Ilala Clinic: 2 people in total.
     respond(f2, ila, lab, 2); respond(f2, ila, lab, 3);
 
+    // Two more tiny places keep Temeke and its hospital from being hidden as the
+    // complementary row of their parent lists (the list needs 0 or 2+ hidden rows).
+    const mss = createDistrict('MSS', 'Msasani', dsm);
+    const s1 = createFacility('S1', 'Temeke Dispensary A', { regionId: dsm, districtId: tmk });
+    const s2 = createFacility('S2', 'Temeke Dispensary B', { regionId: dsm, districtId: tmk });
+    const m1 = createFacility('M1', 'Msasani Clinic', { regionId: dsm, districtId: mss });
+    respond(s1, tmk, lab, 2); respond(s1, tmk, lab, 3);
+    respond(s2, tmk, lab, 2);
+    respond(m1, mss, lab, 2);
+
     admin = createUser({ role: 'admin' });
     monitor = createUser({ role: 'monitor' });
     assignRegions(monitor, [dsm]);
@@ -61,12 +71,14 @@ describe('small-group suppression for partner users', () => {
   });
 
   it('hides small facilities in the district report and small districts in the region report', async () => {
-    const district = await get(`/reports/districts/${ila}`, monitor);
-    expect(district.body.items[0]).toMatchObject({ facility_name: 'Ilala Clinic', ...HIDDEN });
+    const district = await get(`/reports/districts/${tmk}`, monitor);
+    expect(row(district.body.items, 'facility_name', 'Temeke Dispensary A')).toMatchObject(HIDDEN);
+    expect(row(district.body.items, 'facility_name', 'Temeke Dispensary B')).toMatchObject(HIDDEN);
+    expect(row(district.body.items, 'facility_id', f1).suppressed).toBeUndefined();
 
     const region = await get(`/reports/regions/${dsm}`, monitor);
     expect(row(region.body.items, 'district_id', ila)).toMatchObject(HIDDEN);
-    expect(row(region.body.items, 'district_id', tmk)).toMatchObject({ ...HIDDEN, suppressed: 'complementary' });
+    expect(row(region.body.items, 'district_id', tmk).suppressed).toBeUndefined();
   });
 
   it('does not hide anything from admins', async () => {
@@ -116,10 +128,17 @@ describe('small-group suppression for partner users', () => {
   });
 
   it('hides the average from partners when the whole view has fewer than 3 respondents', async () => {
-    const asPartner = await get(`/reports/districts/${ila}`, monitor);
+    const mwz = createRegion('MWZ', 'Mwanza');
+    const nya = createDistrict('NYA', 'Nyamagana', mwz);
+    const fn = createFacility('FN', 'Nyamagana Clinic', { regionId: mwz, districtId: nya });
+    addResponse({ userId: createUser({ facilityId: fn }), facilityId: fn, regionId: mwz, districtId: nya, level: 2 });
+    addResponse({ userId: createUser({ facilityId: fn }), facilityId: fn, regionId: mwz, districtId: nya, level: 3 });
+    const other = createUser({ role: 'monitor' });
+    assignRegions(other, [mwz]);
+    const asPartner = await get(`/reports/regions/${mwz}`, other);
     expect(asPartner.body.meta.total_respondents).toBe(2);
     expect(asPartner.body.meta.avg_level).toBeNull();
-    const asAdmin = await get(`/reports/districts/${ila}`, admin);
+    const asAdmin = await get(`/reports/regions/${mwz}`, admin);
     expect(asAdmin.body.meta.avg_level).toBeCloseTo(2.5);
   });
 
@@ -131,8 +150,10 @@ describe('small-group suppression for partner users', () => {
     resp(a, 2); resp(a, 3); resp(a, 4); // all rows visible
     resp(null, 4);                      // one unassigned respondent
     const asPartner = await get(`/reports/facilities/${f3}`, monitor);
-    expect(row(asPartner.body.items, 'department_id', a).suppressed).toBeUndefined();
-    expect(asPartner.body.meta.unassigned_respondents).toBe(1);
+    // The lone unassigned respondent is a hidden remainder, so the row is hidden too
+    // and the unassigned figure is not reported.
+    expect(row(asPartner.body.items, 'department_id', a).suppressed).toBe('complementary');
+    expect(asPartner.body.meta.unassigned_respondents).toBe(0);
     expect(asPartner.body.meta.avg_level).toBeNull();
     const asAdmin = await get(`/reports/facilities/${f3}`, admin);
     expect(asAdmin.body.meta.avg_level).toBeCloseTo(3.25);

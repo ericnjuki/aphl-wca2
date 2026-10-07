@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { api } from '@/lib/api';
+import { api, onUnauthorized } from '@/lib/api';
 
 export interface AuthUser {
   id: number;
@@ -35,6 +35,13 @@ interface AuthState {
   logout: () => Promise<void>;
   changePassword: (currentPassword: string, newPassword: string) => Promise<{ error: string | null }>;
 }
+
+// Callbacks run when the session ends (logout or a 401), e.g. to clear cached
+// query data so another user on the same tab never sees it. Registered by
+// main.tsx, which owns the QueryClient, to avoid an import cycle.
+const sessionEndHandlers: (() => void)[] = [];
+export function onSessionEnd(handler: () => void): void { sessionEndHandlers.push(handler); }
+function sessionEnded(): void { sessionEndHandlers.forEach((h) => h()); }
 
 export const useAuthStore = create<AuthState>((set) => ({
   user: null,
@@ -76,6 +83,7 @@ export const useAuthStore = create<AuthState>((set) => ({
   logout: async () => {
     await api.post('/auth/logout', {});
     set({ user: null, isAuthenticated: false, requirePasswordChange: false });
+    sessionEnded();
   },
 
   changePassword: async (currentPassword, newPassword) => {
@@ -95,3 +103,11 @@ export const useAuthStore = create<AuthState>((set) => ({
     return { error: null };
   },
 }));
+
+// A 401 from any non-/auth request ends the session client-side too.
+onUnauthorized(() => {
+  if (useAuthStore.getState().user) {
+    useAuthStore.setState({ user: null, isAuthenticated: false, requirePasswordChange: false });
+    sessionEnded();
+  }
+});

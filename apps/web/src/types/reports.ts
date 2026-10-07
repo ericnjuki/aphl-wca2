@@ -16,7 +16,7 @@ export interface MaturityCounts {
   // Partner view only. 'small': the bucket has 1–2 respondents. 'complementary':
   // hidden as well so a lone small bucket can't be recovered by subtraction.
   // Counts are blanked (zero, avg null) by the API. Absent on visible rows.
-  suppressed?: 'small' | 'complementary';
+  suppressed?: 'small' | 'complementary' | 'parent';
   // An archived region/district/facility/department listed because it still
   // has respondents in this view. Absent on active rows.
   archived?: boolean;
@@ -32,6 +32,9 @@ export interface ReportMeta {
   // excluded). Null when there are none, or for partners when the view has
   // only 1–2 respondents.
   avg_level: number | null;
+  // Partner reports only: this district/facility's own row is hidden in the
+  // list above it, so the whole report is blanked (items carry 'parent').
+  privacy_hidden?: boolean;
   generated_at: string;
   filters: {
     domain_code: string | null;

@@ -53,6 +53,17 @@ describe("buildWorkbook — districts", () => {
     });
   });
 
+  it("prints 'Hidden for privacy' instead of 0 respondents for a privacy-hidden report", () => {
+    const r: DistrictReportResponse = {
+      level: "district",
+      district: { id: 7, name: "Temeke", region_id: 1, region_name: "Dar es Salaam" },
+      items: [{ facility_id: 3, facility_name: "Temeke Hospital", ...counts, respondents: 0, suppressed: "parent" }],
+      meta: { ...meta, total_respondents: 0, privacy_hidden: true },
+    };
+    const wb = buildWorkbook(r);
+    expect(summary(wb).find((s) => s.Field === "Total respondents")?.Value).toBe("Hidden for privacy");
+  });
+
   it("district report breaks down by facility and is titled after the district", () => {
     const r: DistrictReportResponse = {
       level: "district",

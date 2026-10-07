@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
@@ -11,6 +12,7 @@ interface Props {
 
 export function ChangePasswordDialog({ open }: Props) {
   const changePassword = useAuthStore((s) => s.changePassword);
+  const queryClient = useQueryClient();
 
   const [currentPassword, setCurrentPassword] = React.useState('');
   const [newPassword, setNewPassword] = React.useState('');
@@ -39,6 +41,8 @@ export function ChangePasswordDialog({ open }: Props) {
     if (result.error) {
       setError(result.error);
     } else {
+      // Queries fired before the change were rejected (403) and are not retried on their own.
+      void queryClient.invalidateQueries();
       toast.success('Password updated successfully.');
     }
   }

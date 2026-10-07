@@ -6,7 +6,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
 
 import "@/styles/index.css";
-import { useAuthStore } from "@/store/auth";
+import { useAuthStore, onSessionEnd } from "@/store/auth";
 import { Toaster } from "@/components/ui/sonner";
 
 import {
@@ -27,6 +27,7 @@ const SetupPage = React.lazy(() => import("@/pages/SetupPage"));
 const DocsPage = React.lazy(() => import("@/pages/DocsPage"));
 
 const queryClient = new QueryClient();
+onSessionEnd(() => queryClient.clear());
 const sqliteClient = new SQLiteClient();
 
 const ENV = import.meta.env;

@@ -7,6 +7,7 @@ interface Props {
   avgLevel: number | null;
   bucketsCovered: number;
   bucketsLabel: string;        // e.g. "regions", "facilities"
+  hidden?: boolean;            // privacy-hidden report: show dashes for respondents / average
 }
 
 function avgLabel(avg: number | null): string {
@@ -22,6 +23,7 @@ export function ReportKpiCards({
   avgLevel,
   bucketsCovered,
   bucketsLabel,
+  hidden = false,
 }: Props) {
   return (
     <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
@@ -32,7 +34,7 @@ export function ReportKpiCards({
           </div>
           <div className="flex flex-col">
             <span className="text-xs text-muted-foreground">Respondents</span>
-            <span className="text-2xl font-semibold leading-tight">{totalRespondents.toLocaleString()}</span>
+            <span className="text-2xl font-semibold leading-tight">{hidden ? '—' : totalRespondents.toLocaleString()}</span>
           </div>
         </CardContent>
       </Card>
@@ -44,8 +46,8 @@ export function ReportKpiCards({
           <div className="flex flex-col">
             <span className="text-xs text-muted-foreground">Avg maturity</span>
             <span className="text-2xl font-semibold leading-tight">
-              {formatAvgLevel(avgLevel)}{' '}
-              <span className="text-sm font-normal text-muted-foreground">{avgLabel(avgLevel)}</span>
+              {hidden ? '—' : formatAvgLevel(avgLevel)}{' '}
+              <span className="text-sm font-normal text-muted-foreground">{hidden ? '' : avgLabel(avgLevel)}</span>
             </span>
           </div>
         </CardContent>

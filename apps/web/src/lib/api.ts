@@ -5,6 +5,22 @@ export const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsh
 export type ApiResponse<T> = { data: T; error: null } | { data: null; error: string };
 export type BinaryResponse<T> = ApiResponse<T> & { status: number };
 
+// ── Session expiry ────────────────────────────────────────────────────────────
+// A 401 on a non-/auth request means the session ended (e.g. the user was
+// disabled). The auth store registers a handler that clears its user so the app
+// shows the login page; registering (instead of importing the store) avoids an
+// import cycle.
+let unauthorizedHandler: (() => void) | null = null;
+export function onUnauthorized(handler: (() => void) | null): void { unauthorizedHandler = handler; }
+
+export function isSessionExpiry(path: string, status: number): boolean {
+  return status === 401 && !path.startsWith('/auth');
+}
+
+function notifyIfExpired(path: string, status: number): void {
+  if (isSessionExpiry(path, status)) unauthorizedHandler?.();
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<ApiResponse<T>> {
   try {
     const res = await fetch(`${BASE_URL}${path}`, {
@@ -19,6 +35,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<ApiResponse
     const json = await res.json().catch(() => null);
 
     if (!res.ok) {
+      notifyIfExpired(path, res.status);
       return { data: null, error: (json as { error?: string })?.error ?? res.statusText };
     }
 
@@ -52,7 +69,7 @@ export async function postWorkbook<T>(path: string, file: Blob): Promise<BinaryR
       headers: { 'Content-Type': XLSX_MIME },
       body: file,
     });
-    if (!res.ok) return { data: null, error: await errorMessage(res), status: res.status };
+    if (!res.ok) { notifyIfExpired(path, res.status); return { data: null, error: await errorMessage(res), status: res.status }; }
     return { data: (await res.json()) as T, error: null, status: res.status };
   } catch {
     return { data: null, error: 'Network error. Please check your connection.', status: 0 };
@@ -75,7 +92,7 @@ export function saveBlob(blob: Blob, filename: string): void {
 export async function downloadFile(path: string, filename: string): Promise<string | null> {
   try {
     const res = await fetch(`${BASE_URL}${path}`, { credentials: 'include' });
-    if (!res.ok) return await errorMessage(res);
+    if (!res.ok) { notifyIfExpired(path, res.status); return await errorMessage(res); }
     saveBlob(await res.blob(), filename);
     return null;
   } catch {
