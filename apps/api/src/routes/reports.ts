@@ -77,7 +77,7 @@ const BLANK_COUNTS = {
   count_na: 0, count_beginner: 0, count_competent: 0, count_proficient: 0, count_expert: 0,
 };
 
-type Suppression = 'small' | 'complementary';
+type Suppression = 'small' | 'complementary';  // 'parent' is set by blankItems
 
 function suppressSmallGroups<T extends Record<string, unknown>>(scope: Scope, items: T[]): T[] {
   if (scope.role !== 'monitor') return items;
@@ -171,6 +171,74 @@ function respondentCounts(
   return { total: row?.total ?? 0, unassigned: row?.unassigned ?? 0, avg: row?.avg_level ?? null };
 }
 
+// ── Parent lists ──────────────────────────────────────────────────────────────
+// The list a report's own row appears in one level up. Built here once, with
+// archived children resolved and partner suppression applied, so the list
+// endpoints and the privacy-hidden check below see exactly the same rows.
+function regionDistrictItems(scope: Scope, f: CommonFilters, regionId: number): Record<string, unknown>[] {
+  const on = uarOnFilters(f);
+  const items = query(
+    `SELECT d.id AS district_id, d.name AS district_name, d.archived_at, ${COUNTS_SELECT}
+     FROM districts d
+     LEFT JOIN user_assessment_responses uar
+            ON uar.district_id = d.id AND uar.region_id = d.region_id${on.sql}
+     LEFT JOIN user_assessments ua ON ua.id = uar.user_assessment_id${uaOnFilter(f)}
+     WHERE d.region_id = ?
+     GROUP BY d.id, d.name, d.archived_at
+     ORDER BY d.name`,
+    [...on.params, regionId],
+  );
+  return suppressSmallGroups(scope, withArchived(items));
+}
+
+function districtFacilityItems(scope: Scope, f: CommonFilters, districtId: number): Record<string, unknown>[] {
+  const on = uarOnFilters(f);
+  const items = query(
+    `SELECT fa.id AS facility_id, fa.name AS facility_name, fa.archived_at, ${COUNTS_SELECT}
+     FROM facilities fa
+     LEFT JOIN user_assessment_responses uar
+            ON uar.facility_id = fa.id${on.sql}
+     LEFT JOIN user_assessments ua ON ua.id = uar.user_assessment_id${uaOnFilter(f)}
+     WHERE fa.district_id = ?
+     GROUP BY fa.id, fa.name, fa.archived_at
+     ORDER BY fa.name`,
+    [...on.params, districtId],
+  );
+  return suppressSmallGroups(scope, withArchived(items));
+}
+
+// ── Privacy-hidden reports ────────────────────────────────────────────────────
+// A partner could open a district/facility that is hidden in the list one level
+// up and subtract it from the visible rows. So for partners a report is
+// "privacy hidden" when its own row is suppressed in its parent list (same
+// filters, same pipeline). A facility is also hidden when its district is
+// (recursive). A facility with no district has no parent list, so it is not
+// hidden by one. Admins and staff are never affected.
+function isDistrictPrivacyHidden(scope: Scope, f: CommonFilters, district: { id: number; region_id: number | null }): boolean {
+  if (scope.role !== 'monitor' || district.region_id === null) return false;
+  const row = regionDistrictItems(scope, f, district.region_id).find((i) => i.district_id === district.id);
+  return row?.suppressed !== undefined;
+}
+
+function isFacilityPrivacyHidden(scope: Scope, f: CommonFilters, facility: { id: number; district_id: number | null }): boolean {
+  if (scope.role !== 'monitor' || facility.district_id === null) return false;
+  const row = districtFacilityItems(scope, f, facility.district_id).find((i) => i.facility_id === facility.id);
+  if (row?.suppressed !== undefined) return true;
+  const [district] = query<{ id: number; region_id: number | null }>(
+    'SELECT id, region_id FROM districts WHERE id = ?', [facility.district_id],
+  );
+  return district ? isDistrictPrivacyHidden(scope, f, district) : false;
+}
+
+// Names and ids stay (the structure is not secret); every figure goes.
+function blankItems(items: Record<string, unknown>[]): Record<string, unknown>[] {
+  return items.map((item) => ({ ...item, ...BLANK_COUNTS, suppressed: 'parent' }));
+}
+
+function hiddenMeta(f: CommonFilters) {
+  return { ...meta(f, 0, 0, null), privacy_hidden: true };
+}
+
 // ── GET /reports/national ──────────────────────────────────────────────────
 router.get('/national', (req: Request, res: Response, next: NextFunction) => {
   try {
@@ -217,19 +285,8 @@ router.get('/regions/:regionId', (req: Request, res: Response, next: NextFunctio
     if (!region) return next(createError('Region not found', 404));
 
     const f = parseFilters(req);
-    const on = uarOnFilters(f);
 
-    const items = query(
-      `SELECT d.id AS district_id, d.name AS district_name, d.archived_at, ${COUNTS_SELECT}
-       FROM districts d
-       LEFT JOIN user_assessment_responses uar
-              ON uar.district_id = d.id AND uar.region_id = d.region_id${on.sql}
-       LEFT JOIN user_assessments ua ON ua.id = uar.user_assessment_id${uaOnFilter(f)}
-       WHERE d.region_id = ?
-       GROUP BY d.id, d.name, d.archived_at
-       ORDER BY d.name`,
-      [...on.params, regionId],
-    );
+    const items = regionDistrictItems(scope, f, regionId);
 
     // Facilities not yet placed in a district — surfaced so they stay reachable.
     const undistricted_facilities = query<{ id: number; name: string }>(
@@ -250,7 +307,7 @@ router.get('/regions/:regionId', (req: Request, res: Response, next: NextFunctio
       params: [regionId],
     });
 
-    res.json({ level: 'region', region, items: suppressSmallGroups(scope, withArchived(items)), undistricted_facilities, meta: meta(f, counts.total, counts.unassigned, viewAvg(scope, counts)) });
+    res.json({ level: 'region', region, items, undistricted_facilities, meta: meta(f, counts.total, counts.unassigned, viewAvg(scope, counts)) });
   } catch (err) { next(err); }
 });
 
@@ -271,19 +328,8 @@ router.get('/districts/:districtId', (req: Request, res: Response, next: NextFun
     if (!district) return next(createError('District not found', 404));
 
     const f = parseFilters(req);
-    const on = uarOnFilters(f);
 
-    const items = query(
-      `SELECT fa.id AS facility_id, fa.name AS facility_name, fa.archived_at, ${COUNTS_SELECT}
-       FROM facilities fa
-       LEFT JOIN user_assessment_responses uar
-              ON uar.facility_id = fa.id${on.sql}
-       LEFT JOIN user_assessments ua ON ua.id = uar.user_assessment_id${uaOnFilter(f)}
-       WHERE fa.district_id = ?
-       GROUP BY fa.id, fa.name, fa.archived_at
-       ORDER BY fa.name`,
-      [...on.params, districtId],
-    );
+    const items = districtFacilityItems(scope, f, districtId);
 
     const whereParts: string[] = ['uar.district_id = ?'];
     const whereParams: SqlValue[] = [districtId];
@@ -292,7 +338,11 @@ router.get('/districts/:districtId', (req: Request, res: Response, next: NextFun
     // At district level, unassigned = respondents in this district with no facility_id.
     const counts = respondentCounts('WHERE ' + whereParts.join(' AND '), whereParams, f, 'facility_id');
 
-    res.json({ level: 'district', district, items: suppressSmallGroups(scope, withArchived(items)), meta: meta(f, counts.total, counts.unassigned, viewAvg(scope, counts)) });
+    if (isDistrictPrivacyHidden(scope, f, district)) {
+      return res.json({ level: 'district', district, items: blankItems(items), meta: hiddenMeta(f) });
+    }
+
+    res.json({ level: 'district', district, items, meta: meta(f, counts.total, counts.unassigned, viewAvg(scope, counts)) });
   } catch (err) { next(err); }
 });
 
@@ -343,7 +393,12 @@ router.get('/facilities/:facilityId', (req: Request, res: Response, next: NextFu
     // At facility level, unassigned = respondents in this facility with no department_id.
     const counts = respondentCounts('WHERE ' + whereParts.join(' AND '), whereParams, f, 'department_id');
 
-    res.json({ level: 'facility', facility, items: suppressSmallGroups(scope, withArchived(items)), meta: meta(f, counts.total, counts.unassigned, viewAvg(scope, counts)) });
+    const suppressed = suppressSmallGroups(scope, withArchived(items));
+    if (isFacilityPrivacyHidden(scope, f, facility)) {
+      return res.json({ level: 'facility', facility, items: blankItems(suppressed), meta: hiddenMeta(f) });
+    }
+
+    res.json({ level: 'facility', facility, items: suppressed, meta: meta(f, counts.total, counts.unassigned, viewAvg(scope, counts)) });
   } catch (err) { next(err); }
 });
 
