@@ -36,6 +36,8 @@ assessed themselves — for example an NGO partner supporting a project.
   would leave a single hidden row in a list, one more row is hidden ("Hidden
   for privacy") so the hidden results are harder to work out from the totals in a list.
   This applies on screen and in exports. Admins and staff still see the numbers.
+- A district or facility that is hidden in its list can't be opened to read it
+  either: its report opens with a "hidden for privacy" notice and no figures.
 - Region, district and facility reports use each facility's **current** region:
   if a facility moves to another region, its past responses move with it.
 - Partners cannot open the national report.

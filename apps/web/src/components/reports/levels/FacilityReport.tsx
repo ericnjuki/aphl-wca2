@@ -6,6 +6,7 @@ import { MaturityStackedBar } from '../MaturityStackedBar';
 import { MaturityBreakdownTable } from '../MaturityBreakdownTable';
 import { ChartSkeleton } from '../ChartSkeleton';
 import { ReportKpiCards } from '../ReportKpiCards';
+import { PrivacyHiddenNotice } from '../PrivacyHiddenNotice';
 import { UnassignedBanner } from '../UnassignedBanner';
 import { archivedLabel } from '@/lib/reports/archived';
 
@@ -30,12 +31,14 @@ export function FacilityReport({ facilityId }: Props) {
 
   return (
     <div className="flex flex-col gap-4 p-4">
+      {data.meta.privacy_hidden && <PrivacyHiddenNotice entity="facility" />}
       <UnassignedBanner level="facility" count={data.meta.unassigned_respondents} />
       <ReportKpiCards
         totalRespondents={data.meta.total_respondents}
         avgLevel={data.meta.avg_level}
         bucketsCovered={covered}
         bucketsLabel="departments"
+        hidden={data.meta.privacy_hidden}
       />
       <div className="rounded-sm border bg-background">
         <div className="flex items-center justify-between border-b px-3 py-2">

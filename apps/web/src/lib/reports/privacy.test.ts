@@ -10,6 +10,14 @@ describe("suppressionText", () => {
     });
   });
 
+  it("explains a report hidden because its parent row is hidden", () => {
+    expect(suppressionText("parent")).toEqual({
+      count: "—",
+      note: "Hidden for privacy",
+      export: "Hidden for privacy",
+    });
+  });
+
   it("explains complementary hiding without claiming fewer than 3", () => {
     expect(suppressionText("complementary")).toEqual({
       count: "—",
