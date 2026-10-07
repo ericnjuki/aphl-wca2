@@ -111,7 +111,8 @@ export function createUser(opts: {
   return row?.id ?? 0;
 }
 
-// One completed + approved session with a single response row.
+// One completed session (approved unless reviewStatus says otherwise) with a
+// single response row.
 export function addResponse(opts: {
   userId: number;
   facilityId?: number | null;
@@ -119,11 +120,12 @@ export function addResponse(opts: {
   districtId?: number | null;
   departmentId?: number | null;
   level?: number;
+  reviewStatus?: 'approved' | 'pending' | 'rejected';
 }): number {
   execute(
     `INSERT INTO user_assessments (user_id, domain_code, domain_name, status, review_status)
-     VALUES (?, 'LAB', 'Lab', 'completed', 'approved')`,
-    [opts.userId],
+     VALUES (?, 'LAB', 'Lab', 'completed', ?)`,
+    [opts.userId, opts.reviewStatus ?? 'approved'],
   );
   const [ua] = query<{ id: number }>(
     `SELECT id FROM user_assessments WHERE user_id = ? AND domain_code = 'LAB' AND status = 'completed' ORDER BY id DESC LIMIT 1`,
