@@ -40,5 +40,5 @@ To change the organisation later, export the setup, edit it and import it again 
 
 - Pagination lives at the bottom of every large table. Use **Rows per page** if you want denser or lighter views.
 - Use the search box on Users and Reviews to narrow long lists.
-- Toggle **Approved only** on the Reports filter bar to see pending/rejected submissions too — useful when reviewing before approval.
+- Toggle **Approved only** on the Reports filter bar to see pending/rejected submissions too — useful when reviewing before approval (admins and staff only).
 - Most pages work on both dark and light theme; use the sun/moon icon in the top-right.

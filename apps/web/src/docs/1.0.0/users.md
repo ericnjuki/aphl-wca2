@@ -36,6 +36,9 @@ assessed themselves — for example an NGO partner supporting a project.
   continues ("Hidden for privacy") until the hidden rows together cover at least
   3 people, so they can't be worked out by subtraction from the totals in a list.
   This applies on screen and in exports. Admins and staff still see the numbers.
+- Partners only see approved submissions. The **Approved only** switch is
+  locked on for them, and pending or rejected submissions are never counted in
+  their reports or exports. Approving a submission adds it to what partners see.
 - A district or facility that is hidden in its list can't be opened to read it
   either: its report opens with a "hidden for privacy" notice and no figures.
 - For partners, a result counts only where it was recorded relative to each
