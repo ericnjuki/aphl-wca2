@@ -38,8 +38,13 @@ assessed themselves — for example an NGO partner supporting a project.
   This applies on screen and in exports. Admins and staff still see the numbers.
 - A district or facility that is hidden in its list can't be opened to read it
   either: its report opens with a "hidden for privacy" notice and no figures.
-- Region, district and facility reports use each facility's **current** region:
-  if a facility moves to another region, its past responses move with it.
+- For partners, a result counts only where it was recorded relative to each
+  place's current location, so older results from districts or facilities that
+  have since moved are held back, and the "unassigned" figure may show 0.
+  (Admins and staff still see past responses follow a moved facility.)
+- Known limit: comparing the same place with and without a domain or competency
+  filter can narrow down small groups, so partner access should go to trusted
+  organisations.
 - Partners cannot open the national report.
 - A region can't be deleted while a partner is assigned to it — remove it from
   the partner first.
