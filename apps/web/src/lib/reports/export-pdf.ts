@@ -111,7 +111,7 @@ export async function exportPdf(
     `Domain: ${r.meta.filters.domain_code ?? 'All'}`,
     `Competency: ${r.meta.filters.competency_value ?? 'All'}`,
     `Approved only: ${r.meta.filters.approved_only ? 'Yes' : 'No'}`,
-    `Respondents: ${r.meta.total_respondents}`,
+    `Respondents: ${r.meta.privacy_hidden ? 'Hidden for privacy' : r.meta.total_respondents}`,
     `Generated: ${new Date(r.meta.generated_at).toLocaleString()}${opts.userEmail ? ` · by ${opts.userEmail}` : ''}`,
   ];
   doc.text(metaLines.join('    '), 40, 58, { maxWidth: pageW - 80 });

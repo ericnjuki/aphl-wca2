@@ -79,7 +79,7 @@ function summaryRows(r: AnyReport): Record<string, unknown>[] {
   return [
     { Field: 'Title', Value: titleFor(r) },
     { Field: 'Level', Value: r.level },
-    { Field: 'Total respondents', Value: r.meta.total_respondents },
+    { Field: 'Total respondents', Value: r.meta.privacy_hidden ? 'Hidden for privacy' : r.meta.total_respondents },
     { Field: 'Domain filter',     Value: r.meta.filters.domain_code ?? 'All' },
     { Field: 'Competency filter', Value: r.meta.filters.competency_value ?? 'All' },
     { Field: 'Approved only',     Value: r.meta.filters.approved_only ? 'Yes' : 'No (includes pending/rejected)' },

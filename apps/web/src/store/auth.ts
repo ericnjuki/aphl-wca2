@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { api } from '@/lib/api';
+import { api, onUnauthorized } from '@/lib/api';
 
 export interface AuthUser {
   id: number;
@@ -95,3 +95,10 @@ export const useAuthStore = create<AuthState>((set) => ({
     return { error: null };
   },
 }));
+
+// A 401 from any non-/auth request ends the session client-side too.
+onUnauthorized(() => {
+  if (useAuthStore.getState().user) {
+    useAuthStore.setState({ user: null, isAuthenticated: false, requirePasswordChange: false });
+  }
+});
