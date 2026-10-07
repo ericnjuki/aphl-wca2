@@ -25,7 +25,7 @@ Both actions invalidate the relevant query caches, so **Reports**, **My assessme
 
 ## Catching a stale submission
 
-If you toggle **Approved only** OFF on the Reports page, you'll see pending and rejected submissions counted alongside approved ones. Useful for pre-review previews or if you want to audit a rejected submission's impact.
+If you toggle **Approved only** OFF on the Reports page (admins and staff only), you'll see pending and rejected submissions counted alongside approved ones. Useful for pre-review previews or if you want to audit a rejected submission's impact.
 
 ## Rejecting sensibly
 
