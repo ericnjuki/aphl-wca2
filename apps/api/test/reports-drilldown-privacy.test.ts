@@ -151,4 +151,96 @@ describe('partner drill-down privacy', () => {
     const other = await get(`/reports/districts/${b}`, partner);
     expect(other.body.meta.privacy_hidden).toBeFalsy();
   });
+
+  // Respondents of a region with no district are in the region total but in no
+  // list row, so they must take part in suppression too.
+  describe('respondents with no district', () => {
+    const undistricted = (n: number): number => {
+      const u = createFacility('FU', 'Undistricted Clinic', { regionId: region, districtId: null });
+      for (let i = 0; i < n; i++) {
+        addResponse({ userId: createUser({ facilityId: u }), facilityId: u, regionId: region, districtId: null });
+      }
+      return u;
+    };
+
+    it('hides the undistricted group as the complementary row, and its facility reports', async () => {
+      const a = createDistrict('A', 'Alpha', region);
+      const fa = createFacility('FA', 'Alpha Clinic', { regionId: region, districtId: a });
+      respond(2, fa, a);
+      const u = undistricted(10);
+
+      const regionRes = await get(`/reports/regions/${region}`, partner);
+      expect(regionRes.body.items.find((i: any) => i.district_id === a).suppressed).toBe('small');
+      expect(regionRes.body.meta.unassigned_respondents).toBe(0);
+      const hidden = await get(`/reports/facilities/${u}`, partner);
+      expectHidden(hidden.body);
+
+      const asAdmin = await get(`/reports/facilities/${u}`, admin);
+      expect(asAdmin.body.meta.total_respondents).toBe(10);
+      expect(asAdmin.body.meta.privacy_hidden).toBeFalsy();
+      const adminRegion = await get(`/reports/regions/${region}`, admin);
+      expect(adminRegion.body.meta.unassigned_respondents).toBe(10);
+    });
+
+    it('hides a small undistricted group without hiding visible districts', async () => {
+      const a = createDistrict('A', 'Alpha', region);
+      const b = createDistrict('B', 'Beta', region);
+      const fa = createFacility('FA', 'Alpha Clinic', { regionId: region, districtId: a });
+      const fb = createFacility('FB', 'Beta Clinic', { regionId: region, districtId: b });
+      respond(2, fa, a); respond(5, fb, b);
+      const u = undistricted(2);
+
+      const regionRes = await get(`/reports/regions/${region}`, partner);
+      expect(regionRes.body.items.find((i: any) => i.district_id === b).suppressed).toBeUndefined();
+      expect(regionRes.body.meta.unassigned_respondents).toBe(0);
+      expectHidden((await get(`/reports/facilities/${u}`, partner)).body);
+      expect((await get(`/reports/districts/${b}`, partner)).body.meta.privacy_hidden).toBeFalsy();
+    });
+
+    it('changes nothing when the region has no undistricted respondents', async () => {
+      const a = createDistrict('A', 'Alpha', region);
+      const b = createDistrict('B', 'Beta', region);
+      const fa = createFacility('FA', 'Alpha Clinic', { regionId: region, districtId: a });
+      const fb = createFacility('FB', 'Beta Clinic', { regionId: region, districtId: b });
+      respond(2, fa, a); respond(5, fb, b);
+      const regionRes = await get(`/reports/regions/${region}`, partner);
+      expect(regionRes.body.items.find((i: any) => i.district_id === a).suppressed).toBe('small');
+      expect(regionRes.body.items.find((i: any) => i.district_id === b).suppressed).toBe('complementary');
+      expect(regionRes.body.meta.unassigned_respondents).toBe(0);
+    });
+  });
+
+  it('counts only responses from the current region of the district in a partner district report', async () => {
+    const old = createRegion('OLD', 'Old Region');
+    const a = createDistrict('A', 'Alpha', region);
+    const e = createDistrict('E', 'Echo', region);
+    const fa = createFacility('FA', 'Alpha Clinic', { regionId: region, districtId: a });
+    const fe = createFacility('FE', 'Echo Clinic', { regionId: region, districtId: e });
+    respond(3, fa, a); respond(4, fe, e);
+    for (let i = 0; i < 2; i++) {
+      addResponse({ userId: createUser({ facilityId: fa }), facilityId: fa, regionId: old, districtId: a });
+    }
+
+    const row = (await get(`/reports/regions/${region}`, partner)).body.items.find((i: any) => i.district_id === a);
+    expect(row.respondents).toBe(3);
+    const res = await get(`/reports/districts/${a}`, partner);
+    expect(res.body.meta.privacy_hidden).toBeFalsy();
+    expect(res.body.meta.total_respondents).toBe(3);
+    expect(res.body.items[0].respondents).toBe(3);
+
+    const asAdmin = await get(`/reports/districts/${a}`, admin);
+    expect(asAdmin.body.meta.total_respondents).toBe(5);
+  });
+
+  it('drops the archived flag from the children of a hidden report', async () => {
+    const a = createDistrict('A', 'Alpha', region);
+    const b = createDistrict('B', 'Beta', region);
+    const fa = createFacility('FA', 'Alpha Clinic', { regionId: region, districtId: a });
+    const fb = createFacility('FB', 'Beta Clinic', { regionId: region, districtId: b });
+    respond(2, fa, a); respond(5, fb, b);
+    execute("UPDATE facilities SET archived_at = datetime('now') WHERE id = ?", [fb]);
+    const res = await get(`/reports/districts/${b}`, partner);
+    expectHidden(res.body);
+    expect(res.body.items[0].archived).toBeUndefined();
+  });
 });
