@@ -243,4 +243,96 @@ describe('partner drill-down privacy', () => {
     expectHidden(res.body);
     expect(res.body.items[0].archived).toBeUndefined();
   });
+
+  // One rule: a response counts toward an entity (its list row and its own
+  // report) for partners only when its snapshot matches the entity's current placement.
+  describe('current-placement scoping', () => {
+    const snap = (n: number, facilityId: number, regionId: number | null, districtId: number | null) => {
+      for (let i = 0; i < n; i++) {
+        addResponse({ userId: createUser({ facilityId }), facilityId, regionId, districtId });
+      }
+    };
+
+    it('a district and its facility count the same responses in list row and report', async () => {
+      const old = createRegion('OLD', 'Old Region');
+      const a = createDistrict('A', 'Alpha', region);
+      const e = createDistrict('E', 'Echo', region);
+      const fa = createFacility('FA', 'Alpha Clinic', { regionId: region, districtId: a });
+      const fe = createFacility('FE', 'Echo Clinic', { regionId: region, districtId: e });
+      snap(3, fa, region, a); snap(2, fa, old, a); snap(4, fe, region, e);
+
+      const regionRow = (await get(`/reports/regions/${region}`, partner)).body.items.find((i: any) => i.district_id === a);
+      const district = await get(`/reports/districts/${a}`, partner);
+      expect(regionRow.respondents).toBe(3);
+      expect(district.body.meta.total_respondents).toBe(3);
+      expect(district.body.items[0].respondents).toBe(3);
+      const facility = await get(`/reports/facilities/${fa}`, partner);
+      expect(facility.body.meta.privacy_hidden).toBeFalsy();
+      expect(facility.body.meta.total_respondents).toBe(3);
+      expect((await get(`/reports/facilities/${fa}`, admin)).body.meta.total_respondents).toBe(5);
+    });
+
+    it('a facility moved between districts counts only responses from its current district', async () => {
+      const a = createDistrict('A', 'Alpha', region);
+      const b = createDistrict('B', 'Beta', region);
+      const fa = createFacility('FA', 'Moved Clinic', { regionId: region, districtId: a });
+      const fa2 = createFacility('FA2', 'Alpha Two', { regionId: region, districtId: a });
+      const fb = createFacility('FB', 'Beta Clinic', { regionId: region, districtId: b });
+      snap(3, fa, region, a);   // current placement
+      snap(4, fa, region, b);   // snapshotted while it was in Beta
+      snap(4, fa2, region, a); snap(5, fb, region, b);
+
+      const list = (await get(`/reports/districts/${a}`, partner)).body.items;
+      expect(list.find((i: any) => i.facility_id === fa).respondents).toBe(3);
+      const facility = await get(`/reports/facilities/${fa}`, partner);
+      expect(facility.body.meta.total_respondents).toBe(3);
+      expect((await get(`/reports/facilities/${fa}`, admin)).body.meta.total_respondents).toBe(7);
+      // Beta's own district rule is unchanged: its snapshot still counts there.
+      expect((await get(`/reports/districts/${b}`, partner)).body.meta.total_respondents).toBe(9);
+    });
+
+    it('treats each undistricted facility as its own pseudo-row in region suppression', async () => {
+      const a = createDistrict('A', 'Alpha', region);
+      const b = createDistrict('B', 'Beta', region);
+      const fa = createFacility('FA', 'Alpha Clinic', { regionId: region, districtId: a });
+      const fb = createFacility('FB', 'Beta Clinic', { regionId: region, districtId: b });
+      const u1 = createFacility('U1', 'Undistricted One', { regionId: region, districtId: null });
+      const u2 = createFacility('U2', 'Undistricted Two', { regionId: region, districtId: null });
+      snap(5, fa, region, a); snap(6, fb, region, b); snap(8, u1, region, null); snap(2, u2, region, null);
+
+      // U2 is the only small row, so the smallest other row (Alpha, 5) is hidden too.
+      const regionRes = await get(`/reports/regions/${region}`, partner);
+      const row = (id: number) => regionRes.body.items.find((i: any) => i.district_id === id);
+      expect(row(a).suppressed).toBe('complementary');
+      expect(row(b).suppressed).toBeUndefined();
+      expect(regionRes.body.meta.unassigned_respondents).toBe(0);
+      expectHidden((await get(`/reports/facilities/${u2}`, partner)).body);
+      const visible = await get(`/reports/facilities/${u1}`, partner);
+      expect(visible.body.meta.privacy_hidden).toBeFalsy();
+      expect(visible.body.meta.total_respondents).toBe(8);
+      expect((await get(`/reports/facilities/${u2}`, admin)).body.meta.total_respondents).toBe(2);
+      expect((await get(`/reports/regions/${region}`, admin)).body.meta.unassigned_respondents).toBe(10);
+    });
+
+    it('can pick an undistricted facility as the complementary row', async () => {
+      const a = createDistrict('A', 'Alpha', region);
+      const fa = createFacility('FA', 'Alpha Clinic', { regionId: region, districtId: a });
+      const u1 = createFacility('U1', 'Undistricted One', { regionId: region, districtId: null });
+      snap(2, fa, region, a); snap(4, u1, region, null);
+      expectHidden((await get(`/reports/facilities/${u1}`, partner)).body);
+    });
+
+    it('hides a facility with respondents but no district via the remainder row', async () => {
+      const a = createDistrict('A', 'Alpha', region);
+      const fa = createFacility('FA', 'Alpha Clinic', { regionId: region, districtId: a });
+      const orphan = createFacility('FO', 'Orphan', { regionId: region, districtId: null });
+      snap(2, fa, region, a);
+      // Responses with no facility at all fall in the remainder pseudo-row.
+      for (let i = 0; i < 6; i++) addResponse({ userId: createUser(), regionId: region, districtId: null });
+      const regionRes = await get(`/reports/regions/${region}`, partner);
+      expect(regionRes.body.items[0].suppressed).toBe('small');
+      expect(regionRes.body.meta.unassigned_respondents).toBe(0);
+      expect((await get(`/reports/facilities/${orphan}`, partner)).body.meta.privacy_hidden).toBeFalsy();
+    });
+  });
 });

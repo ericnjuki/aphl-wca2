@@ -171,66 +171,158 @@ function respondentCounts(
   return { total: row?.total ?? 0, unassigned: row?.unassigned ?? 0, avg: row?.avg_level ?? null };
 }
 
+// ── Current placement ─────────────────────────────────────────────────────────
+// One rule for partners: a response counts toward an entity (its row in the
+// parent list AND its own report) only when its snapshot matches the entity's
+// CURRENT placement. Snapshots drift when districts or facilities move; without
+// this a report could count more than its list row and be subtracted out.
+//   district   uar.district_id = D.id AND uar.region_id IS D.region_id
+//   facility   uar.facility_id = F.id AND uar.district_id IS F.district_id
+//              AND uar.region_id IS F.region_id   (undistricted: district IS NULL)
+// Admins and staff keep the plain id match. `ref` is a table alias (list
+// queries) or a loaded row (single-entity reports), so both use these helpers.
+interface DistrictRef { id: number; region_id: number | null }
+interface FacilityRef { id: number; region_id: number | null; district_id: number | null }
+type Placement = { sql: string; params: SqlValue[] };
+
+function refValue<T extends object>(ref: string | T, field: keyof T & string): Placement {
+  return typeof ref === 'string'
+    ? { sql: `${ref}.${field}`, params: [] }
+    : { sql: '?', params: [(ref as Record<string, SqlValue>)[field]] };
+}
+
+function placement(parts: [string, Placement][]): Placement {
+  return {
+    sql: parts.map(([lhs, rhs]) => `${lhs} ${rhs.sql}`).join(' AND '),
+    params: parts.flatMap(([, rhs]) => rhs.params),
+  };
+}
+
+// `matchRegion` forces the region match for non-partners too (the region list
+// has always counted district rows that way).
+function districtPlacement(scope: Scope, ref: string | DistrictRef, matchRegion = false): Placement {
+  const parts: [string, Placement][] = [['uar.district_id =', refValue(ref, 'id')]];
+  if (matchRegion || scope.role === 'monitor') parts.push(['uar.region_id IS', refValue(ref, 'region_id')]);
+  return placement(parts);
+}
+
+function facilityPlacement(scope: Scope, ref: string | FacilityRef): Placement {
+  const parts: [string, Placement][] = [['uar.facility_id =', refValue(ref, 'id')]];
+  if (scope.role === 'monitor') {
+    parts.push(['uar.district_id IS', refValue(ref, 'district_id')]);
+    parts.push(['uar.region_id IS', refValue(ref, 'region_id')]);
+  }
+  return placement(parts);
+}
+
 // ── Parent lists ──────────────────────────────────────────────────────────────
 // The list a report's own row appears in one level up. Built here once, with
 // archived children resolved and partner suppression applied, so the list
 // endpoints and the privacy-hidden check below see exactly the same rows.
-// Respondents in the region with no district (or whose district is no longer
-// in it) sit in the region total but in no list row. For partners they take
-// part in suppression as a pseudo-row (never added to items): it can be small
-// or be the complementary row, otherwise a lone hidden district could be
-// recovered as `region total - undistricted facility's report`.
+//
+// Region level, partners: respondents outside every district row would let a
+// lone hidden district be recovered as `region total - their report`. So each
+// undistricted facility is its own pseudo-row (counted by the placement rule),
+// plus one remainder pseudo-row for any other region respondent (no facility, or
+// a snapshot matching no current placement). Pseudo-rows take part in
+// small/complementary decisions but are never added to items; the remainder is
+// never openable.
 function regionDistrictList(
   scope: Scope, f: CommonFilters, regionId: number,
-): { items: Record<string, unknown>[]; noDistrictHidden: boolean } {
+): { items: Record<string, unknown>[]; hiddenUndistricted: Set<number>; anyPseudoHidden: boolean } {
   const on = uarOnFilters(f);
+  const dp = districtPlacement(scope, 'd', true);
   const rows = withArchived(query(
     `SELECT d.id AS district_id, d.name AS district_name, d.archived_at, ${COUNTS_SELECT}
      FROM districts d
      LEFT JOIN user_assessment_responses uar
-            ON uar.district_id = d.id AND uar.region_id = d.region_id${on.sql}
+            ON ${dp.sql}${on.sql}
      LEFT JOIN user_assessments ua ON ua.id = uar.user_assessment_id${uaOnFilter(f)}
      WHERE d.region_id = ?
      GROUP BY d.id, d.name, d.archived_at
      ORDER BY d.name`,
-    [...on.params, regionId],
+    [...dp.params, ...on.params, regionId],
   ));
-  if (scope.role !== 'monitor') return { items: rows, noDistrictHidden: false };
+  if (scope.role !== 'monitor') return { items: rows, hiddenUndistricted: new Set(), anyPseudoHidden: false };
 
-  const whereParts: string[] = ['uar.region_id = ?'];
-  const whereParams: SqlValue[] = [regionId];
+  const fp = facilityPlacement(scope, 'fa');
+  const undistricted = query<{ facility_id: number; respondents: number }>(
+    `SELECT fa.id AS facility_id, COUNT(DISTINCT uar.user_id) AS respondents
+     FROM facilities fa
+     LEFT JOIN user_assessment_responses uar ON ${fp.sql}${on.sql}
+     LEFT JOIN user_assessments ua ON ua.id = uar.user_assessment_id${uaOnFilter(f)}
+     WHERE fa.region_id = ? AND fa.district_id IS NULL
+     GROUP BY fa.id
+     ORDER BY fa.name`,
+    [...fp.params, ...on.params, regionId],
+  );
+
+  // Region respondents covered by no district row and no undistricted facility.
+  const whereParts: string[] = [
+    'uar.region_id = ?',
+    `NOT (COALESCE(uar.district_id IN (SELECT id FROM districts WHERE region_id = ?), 0)
+          OR COALESCE(uar.district_id IS NULL AND uar.facility_id IN
+                (SELECT id FROM facilities WHERE region_id = ? AND district_id IS NULL), 0))`,
+  ];
+  const whereParams: SqlValue[] = [regionId, regionId, regionId];
   if (f.domainCode)      { whereParts.push('uar.domain_code = ?');      whereParams.push(f.domainCode); }
   if (f.competencyValue) { whereParts.push('uar.competency_value = ?'); whereParams.push(f.competencyValue); }
-  const { unassigned } = respondentCounts('WHERE ' + whereParts.join(' AND '), whereParams, f, regionUnassigned(regionId));
+  const remainder = respondentCounts('WHERE ' + whereParts.join(' AND '), whereParams, f, 'region_id').total;
 
-  const PSEUDO = 'no_district';
-  const all = suppressSmallGroups(scope, [...rows, { [PSEUDO]: true, respondents: unassigned }]);
-  const pseudo = all[all.length - 1];
-  return { items: all.slice(0, -1), noDistrictHidden: pseudo.suppressed !== undefined };
+  const pseudo: Record<string, unknown>[] = [...undistricted.map((u) => ({ respondents: u.respondents })), { respondents: remainder }];
+  const all = suppressSmallGroups(scope, [...rows, ...pseudo]);
+  const hiddenPseudo = all.slice(rows.length);
+  const hiddenUndistricted = new Set(
+    undistricted.filter((_, i) => hiddenPseudo[i].suppressed !== undefined).map((u) => u.facility_id),
+  );
+  return {
+    items: all.slice(0, rows.length),
+    hiddenUndistricted,
+    anyPseudoHidden: hiddenPseudo.some((i) => i.suppressed !== undefined),
+  };
 }
 
 // At district level the no-facility group is never openable as a report, so it
 // needs no pseudo-row here (unlike regionDistrictList).
-// For partners only responses snapshotted under the district's CURRENT region
-// count, matching the district's row in the region list.
-function districtFacilityItems(
-  scope: Scope, f: CommonFilters, district: { id: number; region_id: number | null },
-): Record<string, unknown>[] {
+function districtFacilityItems(scope: Scope, f: CommonFilters, district: DistrictRef): Record<string, unknown>[] {
   const on = uarOnFilters(f);
-  const regionSql = scope.role === 'monitor' ? ' AND uar.region_id IS ?' : '';
-  const regionParams: SqlValue[] = scope.role === 'monitor' ? [district.region_id] : [];
+  const fp = facilityPlacement(scope, 'fa');
   const items = query(
     `SELECT fa.id AS facility_id, fa.name AS facility_name, fa.archived_at, ${COUNTS_SELECT}
      FROM facilities fa
      LEFT JOIN user_assessment_responses uar
-            ON uar.facility_id = fa.id${regionSql}${on.sql}
+            ON ${fp.sql}${on.sql}
      LEFT JOIN user_assessments ua ON ua.id = uar.user_assessment_id${uaOnFilter(f)}
      WHERE fa.district_id = ?
      GROUP BY fa.id, fa.name, fa.archived_at
      ORDER BY fa.name`,
-    [...regionParams, ...on.params, district.id],
+    [...fp.params, ...on.params, district.id],
   );
   return suppressSmallGroups(scope, withArchived(items));
+}
+
+// ── Privacy-hidden reports ────────────────────────────────────────────────────
+// A partner could open a district/facility that is hidden in the list one level
+// up and subtract it from the visible rows. So for partners a report is
+// "privacy hidden" when its own row is suppressed in its parent list (same
+// filters, same pipeline). A districted facility is also hidden when its
+// district is (recursive); an undistricted facility is hidden exactly when its
+// own pseudo-row in the region list is. Admins and staff are never affected.
+function isDistrictPrivacyHidden(scope: Scope, f: CommonFilters, district: DistrictRef): boolean {
+  if (scope.role !== 'monitor' || district.region_id === null) return false;
+  const row = regionDistrictList(scope, f, district.region_id).items.find((i) => i.district_id === district.id);
+  return row?.suppressed !== undefined;
+}
+
+function isFacilityPrivacyHidden(scope: Scope, f: CommonFilters, facility: FacilityRef): boolean {
+  if (scope.role !== 'monitor') return false;
+  if (facility.district_id === null) {
+    return facility.region_id !== null && regionDistrictList(scope, f, facility.region_id).hiddenUndistricted.has(facility.id);
+  }
+  const [district] = query<{ id: number; region_id: number | null }>('SELECT id, region_id FROM districts WHERE id = ?', [facility.district_id]);
+  if (!district) return false;
+  const row = districtFacilityItems(scope, f, district).find((i) => i.facility_id === facility.id);
+  return row?.suppressed !== undefined || isDistrictPrivacyHidden(scope, f, district);
 }
 
 // "No district" at region level: no district_id, or a district outside the region.
@@ -239,35 +331,6 @@ function regionUnassigned(regionId: number): { sql: string; params: SqlValue[] }
     sql: 'uar.district_id IS NULL OR uar.district_id NOT IN (SELECT id FROM districts WHERE region_id = ?)',
     params: [regionId],
   };
-}
-
-// ── Privacy-hidden reports ────────────────────────────────────────────────────
-// A partner could open a district/facility that is hidden in the list one level
-// up and subtract it from the visible rows. So for partners a report is
-// "privacy hidden" when its own row is suppressed in its parent list (same
-// filters, same pipeline). A facility is also hidden when its district is
-// (recursive). A facility with no district has no parent list, so it is not
-// hidden by one. Admins and staff are never affected.
-function isDistrictPrivacyHidden(scope: Scope, f: CommonFilters, district: { id: number; region_id: number | null }): boolean {
-  if (scope.role !== 'monitor' || district.region_id === null) return false;
-  const row = regionDistrictList(scope, f, district.region_id).items.find((i) => i.district_id === district.id);
-  return row?.suppressed !== undefined;
-}
-
-function isFacilityPrivacyHidden(
-  scope: Scope, f: CommonFilters, facility: { id: number; region_id: number | null; district_id: number | null },
-): boolean {
-  if (scope.role !== 'monitor') return false;
-  if (facility.district_id === null) {
-    // Undistricted: it sits in the region's "no district" group, hidden when that group is.
-    return facility.region_id !== null && regionDistrictList(scope, f, facility.region_id).noDistrictHidden;
-  }
-  const [district] = query<{ id: number; region_id: number | null }>(
-    'SELECT id, region_id FROM districts WHERE id = ?', [facility.district_id],
-  );
-  if (!district) return false;
-  const row = districtFacilityItems(scope, f, district).find((i) => i.facility_id === facility.id);
-  return row?.suppressed !== undefined || isDistrictPrivacyHidden(scope, f, district);
 }
 
 // Names and ids stay (the structure is not secret); every figure goes.
@@ -326,7 +389,7 @@ router.get('/regions/:regionId', (req: Request, res: Response, next: NextFunctio
 
     const f = parseFilters(req);
 
-    const { items, noDistrictHidden } = regionDistrictList(scope, f, regionId);
+    const { items, anyPseudoHidden } = regionDistrictList(scope, f, regionId);
 
     // Facilities not yet placed in a district — surfaced so they stay reachable.
     const undistricted_facilities = query<{ id: number; name: string }>(
@@ -344,7 +407,7 @@ router.get('/regions/:regionId', (req: Request, res: Response, next: NextFunctio
     // Without this, such a respondent would vanish from both the bars and the total.
     const counts = respondentCounts('WHERE ' + whereParts.join(' AND '), whereParams, f, regionUnassigned(regionId));
 
-    res.json({ level: 'region', region, items, undistricted_facilities, meta: meta(f, counts.total, noDistrictHidden ? 0 : counts.unassigned, viewAvg(scope, counts)) });
+    res.json({ level: 'region', region, items, undistricted_facilities, meta: meta(f, counts.total, anyPseudoHidden ? 0 : counts.unassigned, viewAvg(scope, counts)) });
   } catch (err) { next(err); }
 });
 
@@ -368,9 +431,9 @@ router.get('/districts/:districtId', (req: Request, res: Response, next: NextFun
 
     const items = districtFacilityItems(scope, f, district);
 
-    const whereParts: string[] = ['uar.district_id = ?'];
-    const whereParams: SqlValue[] = [districtId];
-    if (scope.role === 'monitor') { whereParts.push('uar.region_id IS ?'); whereParams.push(district.region_id); }
+    const dp = districtPlacement(scope, district);
+    const whereParts: string[] = [dp.sql];
+    const whereParams: SqlValue[] = [...dp.params];
     if (f.domainCode)      { whereParts.push('uar.domain_code = ?');      whereParams.push(f.domainCode); }
     if (f.competencyValue) { whereParts.push('uar.competency_value = ?'); whereParams.push(f.competencyValue); }
     // At district level, unassigned = respondents in this district with no facility_id.
@@ -408,6 +471,8 @@ router.get('/facilities/:facilityId', (req: Request, res: Response, next: NextFu
     const f = parseFilters(req);
     const on = uarOnFilters(f);
 
+    const fp = facilityPlacement(scope, facility);
+
     // Every department linked to the facility (even empty ones), plus archived
     // departments — linked or not — that still have responses here (withArchived
     // drops the empty archived ones). LEFT JOIN responses keeps zero-response rows.
@@ -416,16 +481,16 @@ router.get('/facilities/:facilityId', (req: Request, res: Response, next: NextFu
        FROM departments d
        LEFT JOIN facility_departments fd ON fd.department_id = d.id AND fd.facility_id = ?
        LEFT JOIN user_assessment_responses uar
-              ON uar.department_id = d.id AND uar.facility_id = ?${on.sql}
+              ON uar.department_id = d.id AND ${fp.sql}${on.sql}
        LEFT JOIN user_assessments ua ON ua.id = uar.user_assessment_id${uaOnFilter(f)}
        WHERE fd.facility_id IS NOT NULL OR d.archived_at IS NOT NULL
        GROUP BY d.id, d.name, d.archived_at
        ORDER BY d.name`,
-      [facilityId, facilityId, ...on.params],
+      [facilityId, ...fp.params, ...on.params],
     );
 
-    const whereParts: string[] = ['uar.facility_id = ?'];
-    const whereParams: SqlValue[] = [facilityId];
+    const whereParts: string[] = [fp.sql];
+    const whereParams: SqlValue[] = [...fp.params];
     if (f.domainCode)      { whereParts.push('uar.domain_code = ?');      whereParams.push(f.domainCode); }
     if (f.competencyValue) { whereParts.push('uar.competency_value = ?'); whereParams.push(f.competencyValue); }
     // At facility level, unassigned = respondents in this facility with no department_id.
