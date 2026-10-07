@@ -7,7 +7,7 @@ interface Props {
   avgLevel: number | null;
   bucketsCovered: number;
   bucketsLabel: string;        // e.g. "regions", "facilities"
-  hidden?: boolean;            // privacy-hidden report: show dashes for respondents / average
+  hidden?: boolean;            // privacy-hidden report: show dashes for respondents / average / covered
 }
 
 function avgLabel(avg: number | null): string {
@@ -59,7 +59,7 @@ export function ReportKpiCards({
           </div>
           <div className="flex flex-col">
             <span className="text-xs text-muted-foreground capitalize">{bucketsLabel} covered</span>
-            <span className="text-2xl font-semibold leading-tight">{bucketsCovered.toLocaleString()}</span>
+            <span className="text-2xl font-semibold leading-tight">{hidden ? '—' : bucketsCovered.toLocaleString()}</span>
           </div>
         </CardContent>
       </Card>
