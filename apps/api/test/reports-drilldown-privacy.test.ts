@@ -481,4 +481,50 @@ describe('partner drill-down privacy', () => {
       expect(res.body.items.find((i: any) => i.facility_id === ids[2]).suppressed).toBeUndefined();
     });
   });
+
+  // Partners only ever see approved submissions, so pending ones must not count
+  // toward any row, pseudo-row or remainder in the privacy pipeline.
+  describe('approval', () => {
+    const pending = (n: number, facilityId: number | null, districtId: number | null) => {
+      for (let i = 0; i < n; i++) {
+        addResponse({ userId: createUser(), facilityId, regionId: region, districtId, reviewStatus: 'pending' });
+      }
+    };
+    const twoDistricts = () => {
+      const a = createDistrict('A', 'Alpha', region);
+      const b = createDistrict('B', 'Beta', region);
+      const fa = createFacility('FA', 'Alpha Clinic', { regionId: region, districtId: a });
+      const fb = createFacility('FB', 'Beta Clinic', { regionId: region, districtId: b });
+      return { a, b, fa, fb };
+    };
+    const kind = (body: any, id: number) => body.items.find((i: any) => i.district_id === id).suppressed;
+
+    it('does not count pending responses in a district row', async () => {
+      const { a, b, fa, fb } = twoDistricts();
+      respond(2, fa, a); pending(5, fa, a); respond(6, fb, b);
+      const res = await get(`/reports/regions/${region}`, partner);
+      expect(kind(res.body, a)).toBe('small');          // 2 approved, not 7
+      expect(kind(res.body, b)).toBe('complementary');
+      const asAdmin = await get(`/reports/regions/${region}?approved_only=false`, admin);
+      expect(asAdmin.body.items.find((i: any) => i.district_id === a).respondents).toBe(7);
+    });
+
+    it('does not count pending responses in an undistricted facility pseudo-row', async () => {
+      const { a, b, fa, fb } = twoDistricts();
+      respond(5, fa, a); respond(6, fb, b);
+      const u = createFacility('FU', 'Undistricted', { regionId: region, districtId: null });
+      for (let i = 0; i < 2; i++) addResponse({ userId: createUser({ facilityId: u }), facilityId: u, regionId: region });
+      pending(5, u, null);
+      expectHidden((await get(`/reports/facilities/${u}`, partner)).body); // 2 approved, not 7
+    });
+
+    it('does not count pending responses in the remainder pseudo-row or the distinct union', async () => {
+      const { a, b, fa, fb } = twoDistricts();
+      respond(2, fa, a); respond(5, fb, b);
+      pending(1, null, null);   // would be a 1-person remainder if counted: hidden total 3, no complement
+      const res = await get(`/reports/regions/${region}`, partner);
+      expect(kind(res.body, a)).toBe('small');
+      expect(kind(res.body, b)).toBe('complementary');
+    });
+  });
 });
