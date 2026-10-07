@@ -460,6 +460,21 @@ describe('partner drill-down privacy', () => {
       expect(kind(ids[2])).toBe('complementary');
     });
 
+    it('counts distinct people: two small rows sharing the same two respondents still hide a third', async () => {
+      const a = createDistrict('A', 'Alpha', region);
+      const [f1, f2, f3] = [0, 1, 2].map((i) => createFacility(`F${i}`, `Facility ${i}`, { regionId: region, districtId: a }));
+      const [p1, p2] = [createUser(), createUser()];
+      for (const fid of [f1, f2]) {
+        for (const userId of [p1, p2]) addResponse({ userId, facilityId: fid, regionId: region, districtId: a });
+      }
+      respond(5, f3, a);
+      const res = await get(`/reports/districts/${a}`, partner);
+      const kind = (id: number) => res.body.items.find((i: any) => i.facility_id === id).suppressed;
+      expect(kind(f1)).toBe('small');
+      expect(kind(f2)).toBe('small');
+      expect(kind(f3)).toBe('complementary');
+    });
+
     it('hides nothing extra when the small rows already total 3 or more', async () => {
       const { a, ids } = facilities([2, 2, 5]);
       const res = await get(`/reports/districts/${a}`, partner);

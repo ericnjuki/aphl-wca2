@@ -55,6 +55,19 @@ function responseWhere(f: CommonFilters, base?: Placement): Placement {
   return { sql: parts.length ? 'WHERE ' + parts.join(' AND ') : '', params: [...(base?.params ?? []), ...on.params] };
 }
 
+// For suppressSmallGroups: distinct respondents across the listed rows, where
+// `conds[i]` is the placement predicate that puts a response in row i.
+function distinctAcross(f: CommonFilters, conds: Placement[]): (hidden: number[]) => number {
+  return (hidden) => {
+    if (hidden.length === 0) return 0;
+    const w = responseWhere(f, {
+      sql: hidden.map((i) => `(${conds[i].sql})`).join(' OR '),
+      params: hidden.flatMap((i) => conds[i].params),
+    });
+    return respondentCounts(w.sql, w.params, f, 'region_id').total;
+  };
+}
+
 function uaOnFilter(f: CommonFilters): string {
   return f.approvedOnly ? " AND ua.review_status = 'approved'" : '';
 }
@@ -88,7 +101,12 @@ const BLANK_COUNTS = {
 
 type Suppression = 'small' | 'complementary';  // 'parent' is set by blankItems
 
-function suppressSmallGroups<T extends Record<string, unknown>>(scope: Scope, items: T[]): T[] {
+// `distinct(hiddenIndexes)` returns the number of DISTINCT respondents across
+// the hidden rows: one person can sit in two sibling rows, so summing the rows
+// could overcount and leave a small group recoverable. Without it rows are summed.
+function suppressSmallGroups<T extends Record<string, unknown>>(
+  scope: Scope, items: T[], distinct?: (hidden: number[]) => number,
+): T[] {
   if (scope.role !== 'monitor') return items;
   const count = (item: T) => Number(item.respondents ?? 0);
 
@@ -98,8 +116,10 @@ function suppressSmallGroups<T extends Record<string, unknown>>(scope: Scope, it
     if (n > 0 && n < MIN_GROUP_SIZE) hidden.set(i, 'small');
   });
 
-  let hiddenTotal = [...hidden.keys()].reduce((sum, i) => sum + count(items[i]), 0);
-  while (hidden.size > 0 && hiddenTotal < MIN_GROUP_SIZE) {
+  const hiddenTotal = () => distinct
+    ? distinct([...hidden.keys()])
+    : [...hidden.keys()].reduce((sum, i) => sum + count(items[i]), 0);
+  while (hidden.size > 0 && hiddenTotal() < MIN_GROUP_SIZE) {
     let pick = -1;
     items.forEach((item, i) => {
       if (hidden.has(i) || count(item) === 0) return;
@@ -107,7 +127,6 @@ function suppressSmallGroups<T extends Record<string, unknown>>(scope: Scope, it
     });
     if (pick === -1) break;
     hidden.set(pick, 'complementary');
-    hiddenTotal += count(items[pick]);
   }
 
   return items.map((item, i) => {
@@ -271,16 +290,22 @@ function regionDistrictList(
 
   // Region respondents covered by no district row and no undistricted facility.
   const ru = regionUnassigned(regionId);
-  const w = responseWhere(f, {
+  const remainderCond: Placement = {
     sql: `uar.region_id = ? AND (${ru.sql})
           AND NOT COALESCE(uar.district_id IS NULL AND uar.facility_id IN
                 (SELECT id FROM facilities WHERE region_id = ? AND district_id IS NULL), 0)`,
     params: [regionId, ...ru.params, regionId],
-  });
+  };
+  const w = responseWhere(f, remainderCond);
   const remainder = respondentCounts(w.sql, w.params, f, 'region_id').total;
 
   const pseudo: Record<string, unknown>[] = [...undistricted.map((u) => ({ respondents: u.respondents })), { respondents: remainder }];
-  const all = suppressSmallGroups(scope, [...rows, ...pseudo]);
+  const conds = [
+    ...rows.map((row) => districtPlacement(scope, { id: Number(row.district_id), region_id: regionId }, true)),
+    ...undistricted.map((u) => facilityPlacement(scope, { id: u.facility_id, district_id: null, region_id: regionId })),
+    remainderCond,
+  ];
+  const all = suppressSmallGroups(scope, [...rows, ...pseudo], distinctAcross(f, conds));
   const hiddenPseudo = all.slice(rows.length);
   const hiddenUndistricted = new Set(
     undistricted.filter((_, i) => hiddenPseudo[i].suppressed !== undefined).map((u) => u.facility_id),
@@ -318,13 +343,18 @@ function districtFacilityList(
   const rows = withArchived(items);
   if (scope.role !== 'monitor') return { items: rows, remainderHidden: false };
 
-  const w = responseWhere(f, {
+  const remainderCond: Placement = {
     sql: `${dp.sql} AND NOT EXISTS (SELECT 1 FROM facilities fa WHERE fa.district_id = ? AND ${fp.sql})`,
     params: [...dp.params, district.id, ...fp.params],
-  });
+  };
+  const w = responseWhere(f, remainderCond);
   const remainder = respondentCounts(w.sql, w.params, f, 'facility_id').total;
 
-  const all = suppressSmallGroups(scope, [...rows, { respondents: remainder } as Record<string, unknown>]);
+  const conds = [
+    ...rows.map((row) => facilityPlacement(scope, { id: Number(row.facility_id), district_id: district.id, region_id: district.region_id })),
+    remainderCond,
+  ];
+  const all = suppressSmallGroups(scope, [...rows, { respondents: remainder } as Record<string, unknown>], distinctAcross(f, conds));
   return { items: all.slice(0, -1), remainderHidden: all[all.length - 1].suppressed !== undefined };
 }
 
@@ -359,13 +389,18 @@ function facilityDepartmentList(
   ));
   if (scope.role !== 'monitor') return { items: rows, remainderHidden: false };
 
-  const w = responseWhere(f, {
+  const remainderCond: Placement = {
     sql: `${fp.sql} AND NOT COALESCE(uar.department_id IN (${LISTED_DEPARTMENTS}), 0)`,
     params: [...fp.params, facility.id],
-  });
+  };
+  const w = responseWhere(f, remainderCond);
   const remainder = respondentCounts(w.sql, w.params, f, 'department_id').total;
 
-  const all = suppressSmallGroups(scope, [...rows, { respondents: remainder } as Record<string, unknown>]);
+  const conds = [
+    ...rows.map((row) => ({ sql: `${fp.sql} AND uar.department_id = ?`, params: [...fp.params, Number(row.department_id)] })),
+    remainderCond,
+  ];
+  const all = suppressSmallGroups(scope, [...rows, { respondents: remainder } as Record<string, unknown>], distinctAcross(f, conds));
   return { items: all.slice(0, -1), remainderHidden: all[all.length - 1].suppressed !== undefined };
 }
 
