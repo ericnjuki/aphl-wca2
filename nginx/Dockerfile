@@ -16,7 +16,7 @@ ENV VITE_API_URL=$VITE_API_URL
 
 RUN pnpm --filter @workforce-competency/web run build
 
-FROM nginx:1.27-alpine AS runtime
+FROM nginx:1.30-alpine AS runtime
 
 # The site config is rendered at start-up from nginx/templates by
 # 40-wca-config.sh: HTTP until a certificate exists for DOMAIN, then HTTPS.

@@ -115,7 +115,7 @@ cp .env.docker.example .env   # then fill in SESSION_SECRET, DOMAIN, LETSENCRYPT
 docker compose up -d --build
 ```
 
-nginx serves plain HTTP on port 80 until certbot has a Let's Encrypt certificate for `DOMAIN`, then switches to HTTPS by itself (within a minute) and redirects port 80. Certificates are renewed automatically. Once HTTPS is up, set `SESSION_COOKIE_SECURE=true` and run `docker compose up -d` again. With `DOMAIN` empty the site stays on HTTP, which is fine for local testing. The SQLite database lives in the `api_data` volume.
+nginx serves plain HTTP on port 80 until certbot has a Let's Encrypt certificate for `DOMAIN`, then switches to HTTPS by itself (within a minute) and redirects port 80. Certificates are renewed automatically, and names added to `DOMAIN_ALIASES` are added to the certificate on the next `docker compose up -d`. Let's Encrypt no longer emails expiry warnings: run `scripts/check-certificate.sh` from cron and alert on a non-zero exit. Once HTTPS is up, set `SESSION_COOKIE_SECURE=true` and run `docker compose up -d` again. With `DOMAIN` empty the site stays on HTTP, which is fine for local testing. The SQLite database lives in the `api_data` volume.
 
 ---
 

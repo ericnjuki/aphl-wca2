@@ -6,7 +6,8 @@
 # - Certificate present: port 80 redirects to HTTPS and 443 serves the app.
 #
 # A background loop switches to HTTPS within a minute of certbot writing the
-# first certificate, and reloads nginx every 12 hours to pick up renewals.
+# first certificate, and reloads nginx within a minute of the certificate
+# being renewed or expanded.
 set -u
 
 TEMPLATES=/etc/nginx/wca-templates
@@ -33,12 +34,16 @@ log() {
     echo "[wca-config] $*"
 }
 
+# Modification time of the live certificate (follows certbot's symlink), or 0.
+cert_mtime() {
+    stat -L -c %Y "$LIVE/${DOMAIN:-none}/fullchain.pem" 2>/dev/null || echo 0
+}
+
 watch_certificate() {
     current=$1
-    ticks=0
+    stamp=$(cert_mtime)
     while :; do
         sleep 60
-        ticks=$((ticks + 1))
         mode=$(desired_mode)
         if [ "$mode" != "$current" ]; then
             render "$mode"
@@ -48,8 +53,10 @@ watch_certificate() {
                 log "new $mode config failed nginx -t; staying on $current"
                 render "$current"
             fi
-        elif [ $((ticks % 720)) -eq 0 ]; then
-            nginx -s reload && log "reloaded to pick up renewed certificates"
+            stamp=$(cert_mtime)
+        elif [ "$mode" = https ] && [ "$(cert_mtime)" != "$stamp" ]; then
+            stamp=$(cert_mtime)
+            nginx -s reload && log "certificate changed; reloaded"
         fi
     done
 }

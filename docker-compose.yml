@@ -60,9 +60,10 @@ services:
       - wca
 
   certbot:
-    # Issues the first certificate for DOMAIN and renews it (nginx/certbot/run.sh).
+    # Issues the certificate for DOMAIN and DOMAIN_ALIASES, expands it when names
+    # are added, and renews it (nginx/certbot/run.sh).
     # Idles when DOMAIN or LETSENCRYPT_EMAIL is not set.
-    image: certbot/certbot:v2.11.0
+    image: certbot/certbot:v5.8.0
     container_name: wca-certbot
     restart: unless-stopped
     depends_on:
