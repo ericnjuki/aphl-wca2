@@ -4,10 +4,11 @@
 # Usage: scripts/check-certificate.sh [domain] [minimum-days]
 #   domain        defaults to DOMAIN in the repository's .env
 #   minimum-days  defaults to 21
+#   CHECK_TIMEOUT (environment) seconds allowed for the TLS connection, default 30
 #
 # Prints the expiry date and days left, and exits 1 when the certificate
 # expires within minimum-days, does not cover every name in DOMAIN and
-# DOMAIN_ALIASES, or cannot be read. certbot renews about 30 days before
+# DOMAIN_ALIASES, or cannot be read within CHECK_TIMEOUT. certbot renews about 30 days before
 # expiry, so fewer than 21 days left means renewal is failing.
 # Run it from cron and alert on a non-zero exit, for example:
 #   0 8 * * * /root/workforce-competency/scripts/check-certificate.sh || <your alert command>
@@ -21,6 +22,7 @@ env_value() {
 
 domain=${1:-$(env_value DOMAIN)}
 min_days=${2:-21}
+timeout_s=${CHECK_TIMEOUT:-30}
 aliases=$(env_value DOMAIN_ALIASES)
 
 if [ -z "$domain" ]; then
@@ -28,8 +30,12 @@ if [ -z "$domain" ]; then
     exit 1
 fi
 
-pem=$(echo | openssl s_client -connect "$domain:443" -servername "$domain" 2>/dev/null \
-    | openssl x509 2>/dev/null) || true
+raw=$(echo | timeout "$timeout_s" openssl s_client -connect "$domain:443" -servername "$domain" 2>/dev/null)
+if [ $? -eq 124 ]; then
+    echo "FAIL: no answer from https://$domain within $timeout_s seconds" >&2
+    exit 1
+fi
+pem=$(openssl x509 2>/dev/null <<<"$raw") || true
 if [ -z "$pem" ]; then
     echo "FAIL: could not read a certificate from https://$domain" >&2
     exit 1

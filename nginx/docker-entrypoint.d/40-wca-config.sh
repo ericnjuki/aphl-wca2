@@ -55,8 +55,13 @@ watch_certificate() {
             fi
             stamp=$(cert_mtime)
         elif [ "$mode" = https ] && [ "$(cert_mtime)" != "$stamp" ]; then
-            stamp=$(cert_mtime)
-            nginx -s reload && log "certificate changed; reloaded"
+            changed=$(cert_mtime)
+            if nginx -s reload; then
+                stamp=$changed
+                log "certificate changed; reloaded"
+            else
+                log "certificate changed but reload failed; retrying in a minute"
+            fi
         fi
     done
 }
