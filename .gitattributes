@@ -1,0 +1,4 @@
+# Shell scripts and nginx templates run inside Linux containers.
+*.sh       text eol=lf
+*.template text eol=lf
+nginx/snippets/*.conf text eol=lf
