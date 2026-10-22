@@ -1,0 +1,20 @@
+# HTTP-only site: used while DOMAIN is unset or has no certificate yet.
+# Rendered to /etc/nginx/conf.d/default.conf by 40-wca-config.sh.
+
+upstream api_upstream {
+    server api:3000;
+    keepalive 16;
+}
+
+server {
+    listen 80 default_server;
+    listen [::]:80 default_server;
+    server_name _;
+
+    # ACME HTTP-01 challenge webroot, so certbot can issue the first certificate.
+    location /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+    }
+
+    include /etc/nginx/snippets/wca-app.conf;
+}

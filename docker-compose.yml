@@ -39,20 +39,43 @@ services:
     restart: unless-stopped
     depends_on:
       - api
+    environment:
+      # Serves HTTP until certbot has a certificate for DOMAIN, then switches
+      # to HTTPS on its own (nginx/docker-entrypoint.d/40-wca-config.sh).
+      DOMAIN: ${DOMAIN:-}
+      DOMAIN_ALIASES: ${DOMAIN_ALIASES:-}
     ports:
-      # Production (labworkforce.online) terminates TLS here, so the standard
-      # ports must be bound for Let's Encrypt HTTP-01 renewals to reach nginx.
+      # TLS terminates here, so the standard ports must be bound for
+      # Let's Encrypt HTTP-01 challenges to reach nginx.
       - "80:80"
       - "443:443"
       # Swap for these when running locally alongside something already on 80/443.
       # - "8066:80"
       # - "6443:443"
     volumes:
-      # Mount these once you're ready for HTTPS — certbot writes certs here.
+      # certbot writes certificates and challenge files here.
       - ./nginx/letsencrypt:/etc/letsencrypt
       - ./nginx/certbot-www:/var/www/certbot
     networks:
       - wca
+
+  certbot:
+    # Issues the first certificate for DOMAIN and renews it (nginx/certbot/run.sh).
+    # Idles when DOMAIN or LETSENCRYPT_EMAIL is not set.
+    image: certbot/certbot:v2.11.0
+    container_name: wca-certbot
+    restart: unless-stopped
+    depends_on:
+      - nginx
+    entrypoint: ["/bin/sh", "/opt/wca/run.sh"]
+    environment:
+      DOMAIN: ${DOMAIN:-}
+      DOMAIN_ALIASES: ${DOMAIN_ALIASES:-}
+      LETSENCRYPT_EMAIL: ${LETSENCRYPT_EMAIL:-}
+    volumes:
+      - ./nginx/certbot/run.sh:/opt/wca/run.sh:ro
+      - ./nginx/letsencrypt:/etc/letsencrypt
+      - ./nginx/certbot-www:/var/www/certbot
 
 networks:
   wca:
