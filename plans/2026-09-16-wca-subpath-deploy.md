@@ -1,4 +1,5 @@
 # Deploy to prod: single instance at apps.nphl.go.ke/wca, redirect wca.nphl.go.ke
+**Status:** in-progress (steps 1–3 live in prod since 2026-09-16; step 4 open, see TODO.md)
 
 ## Context
 
@@ -96,5 +97,5 @@ entry if ever revisited).
 
 ## Status
 
-Not yet implemented — plan only, paused before execution at the user's request. See `HANDOFF.md`
-for exact next-step instructions.
+Steps 1–3 done and browser-verified in prod 2026-09-16. Step 4 (back up the old postgres, retire
+the old containers) is open and tracked in `TODO.md`.
