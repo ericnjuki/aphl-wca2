@@ -41,28 +41,54 @@ services:
     depends_on:
       - api
     environment:
-      # "internal" — this container terminates TLS itself via certbot (see
-      #              docker-compose.internal-tls.yml).
-      # "external" — TLS is terminated by a reverse proxy already on the host,
-      #              or there's no TLS at all (see docker-compose.external.yml);
-      #              this container only ever serves plain HTTP.
-      TLS_MODE: ${TLS_MODE:-internal}
-      # Required for TLS_MODE=internal (used for cert paths + server_name).
-      # Optional for TLS_MODE=external — defaults to nginx's "_" catch-all
-      # server_name when there's no real domain (e.g. a plain-HTTP deploy).
-      DOMAIN: ${DOMAIN:-_}
-      # Defaults to www.<DOMAIN> inside the container if unset; only used by
-      # TLS_MODE=internal (see nginx/docker-entrypoint.d/10-render-conf.sh).
-      DOMAIN_WWW: ${DOMAIN_WWW:-}
-      # Subpath to mount the app under (e.g. "/wca"), no trailing slash.
-      # Empty = serve at domain root. Independent of TLS_MODE
+      # Serves HTTP until certbot has a certificate for DOMAIN, then switches
+      # to HTTPS on its own (nginx/docker-entrypoint.d/40-wca-config.sh).
+      DOMAIN: ${DOMAIN:-}
+      DOMAIN_ALIASES: ${DOMAIN_ALIASES:-}
+      # Empty (default): nginx terminates TLS itself, as above.
+      # "external": TLS is terminated by a proxy in front of this container;
+      # serve plain HTTP only. Use with docker-compose.external.yml.
+      TLS_MODE: ${TLS_MODE:-}
+      # Subpath to serve the app under (e.g. "/wca"), no trailing slash.
+      # Empty = domain root. Baked into the web build too (build args above),
+      # so changing it needs `up -d --build`.
       BASE_PATH: ${BASE_PATH:-}
-      # Optional: when BASE_PATH is set, redirects this domain's root path to
-      # ROOT_REDIRECT_URL instead of 404ing (see 10-render-conf.sh). Empty =
-      # no redirect rendered.
+      # Optional, only with BASE_PATH: every path outside BASE_PATH
+      # 301-redirects here (e.g. "https://apps.example.org/wca").
       ROOT_REDIRECT_URL: ${ROOT_REDIRECT_URL:-}
+    ports:
+      # TLS terminates here, so the standard ports must be bound for
+      # Let's Encrypt HTTP-01 challenges to reach nginx.
+      - "80:80"
+      - "443:443"
+      # Swap for these when running locally alongside something already on 80/443.
+      # - "8066:80"
+      # - "6443:443"
+    volumes:
+      # certbot writes certificates and challenge files here.
+      - ./nginx/letsencrypt:/etc/letsencrypt
+      - ./nginx/certbot-www:/var/www/certbot
     networks:
       - wca
+
+  certbot:
+    # Issues the certificate for DOMAIN and DOMAIN_ALIASES, expands it when names
+    # are added, and renews it (nginx/certbot/run.sh).
+    # Idles when DOMAIN or LETSENCRYPT_EMAIL is not set.
+    image: certbot/certbot:v5.8.0
+    container_name: wca-certbot
+    restart: unless-stopped
+    depends_on:
+      - nginx
+    entrypoint: ["/bin/sh", "/opt/wca/run.sh"]
+    environment:
+      DOMAIN: ${DOMAIN:-}
+      DOMAIN_ALIASES: ${DOMAIN_ALIASES:-}
+      LETSENCRYPT_EMAIL: ${LETSENCRYPT_EMAIL:-}
+    volumes:
+      - ./nginx/certbot/run.sh:/opt/wca/run.sh:ro
+      - ./nginx/letsencrypt:/etc/letsencrypt
+      - ./nginx/certbot-www:/var/www/certbot
 
 networks:
   wca:

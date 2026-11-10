@@ -4,6 +4,7 @@ import { useReportsFiltersStore } from '@/store/reports-filters';
 import type {
   NationalReportResponse,
   RegionReportResponse,
+  DistrictReportResponse,
   FacilityReportResponse,
   DepartmentReportResponse,
   IndividualReportResponse,
@@ -63,6 +64,20 @@ export function useRegionReport(regionId: number | null) {
   });
 }
 
+export function useDistrictReport(districtId: number | null) {
+  const filters = useFilters();
+  return useQuery({
+    queryKey: ['reports', 'district', districtId, filters],
+    enabled: districtId != null,
+    queryFn: async () => {
+      const res = await api.get<DistrictReportResponse>(`/reports/districts/${districtId}${qs(filters)}`);
+      if (res.error !== null) throw new Error(res.error);
+      return res.data;
+    },
+    staleTime: FIVE_MINUTES,
+  });
+}
+
 export function useFacilityReport(facilityId: number | null) {
   const filters = useFilters();
   return useQuery({
@@ -77,13 +92,16 @@ export function useFacilityReport(facilityId: number | null) {
   });
 }
 
-export function useDepartmentReport(departmentId: number | null) {
+export function useDepartmentReport(departmentId: number | null, facilityId: number | null = null) {
   const filters = useFilters();
   return useQuery({
-    queryKey: ['reports', 'department', departmentId, filters],
+    queryKey: ['reports', 'department', departmentId, facilityId, filters],
     enabled: departmentId != null,
     queryFn: async () => {
-      const res = await api.get<DepartmentReportResponse>(`/reports/departments/${departmentId}${qs(filters)}`);
+      const params = new URLSearchParams(qs(filters));
+      if (facilityId != null) params.set('facility_id', String(facilityId));
+      const s = params.toString();
+      const res = await api.get<DepartmentReportResponse>(`/reports/departments/${departmentId}${s ? `?${s}` : ''}`);
       if (res.error !== null) throw new Error(res.error);
       return res.data;
     },

@@ -1,12 +1,13 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { query, execute, transaction } from '../db/database';
-import { requireAuth, requirePasswordChanged } from '../middleware/auth';
+import { requireAuth, requirePasswordChanged, denyMonitor } from '../middleware/auth';
 import { createError } from '../middleware/errorHandler';
 import {
   extractResponses,
   AssessmentItem as SurveyItem,
   DomainRef,
 } from '../lib/survey-responses';
+import { getOrgContext } from '../lib/org';
 
 interface SessionRow extends Record<string, unknown> {
   id: number;
@@ -29,7 +30,7 @@ router.use(requireAuth, requirePasswordChanged);
 
 // ── POST /survey/sessions ─────────────────────────────────────────────────────
 // Create a new in_progress session for a domain.
-router.post('/sessions', (req: Request, res: Response, next: NextFunction) => {
+router.post('/sessions', denyMonitor, (req: Request, res: Response, next: NextFunction) => {
   try {
     const { domain_code, domain_name } = req.body as {
       domain_code?: string;
@@ -92,7 +93,7 @@ router.get('/sessions', (req: Request, res: Response, next: NextFunction) => {
 
 // ── PUT /survey/sessions/:id ──────────────────────────────────────────────────
 // Save draft progress (survey_data + ui_state).
-router.put('/sessions/:id', (req: Request, res: Response, next: NextFunction) => {
+router.put('/sessions/:id', denyMonitor, (req: Request, res: Response, next: NextFunction) => {
   try {
     const sessionId = Number(req.params.id);
     const { survey_data, ui_state } = req.body as {
@@ -131,7 +132,7 @@ router.put('/sessions/:id', (req: Request, res: Response, next: NextFunction) =>
 // Mark a session as completed, store the final data, AND write granular
 // per-subcompetency rows into user_assessment_responses so reports can
 // aggregate without parsing the JSON blob at query time.
-router.post('/sessions/:id/complete', (req: Request, res: Response, next: NextFunction) => {
+router.post('/sessions/:id/complete', denyMonitor, (req: Request, res: Response, next: NextFunction) => {
   try {
     const sessionId = Number(req.params.id);
     const userId = req.session.userId!;
@@ -170,16 +171,7 @@ router.post('/sessions/:id/complete', (req: Request, res: Response, next: NextFu
         )
       : [];
 
-    const [orgCtx] = query<{
-      facility_id: number | null;
-      department_id: number | null;
-      region_id: number | null;
-    }>(
-      `SELECT u.facility_id, u.department_id, f.region_id
-       FROM users u LEFT JOIN facilities f ON f.id = u.facility_id
-       WHERE u.id = ?`,
-      [userId],
-    );
+    const orgCtx = getOrgContext(userId);
 
     const responses = domain ? extractResponses(surveyDataStr, domain, items) : [];
 
@@ -210,8 +202,8 @@ router.post('/sessions/:id/complete', (req: Request, res: Response, next: NextFu
              (user_assessment_id, user_id, domain_id, domain_code,
               competency_value, subcompetency_value,
               response_level, response_text,
-              facility_id, department_id, region_id)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+              facility_id, department_id, region_id, district_id)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
           [
             sessionId, userId, r.domain_id, existing.domain_code,
             r.competency_value, r.subcompetency_value,
@@ -219,6 +211,7 @@ router.post('/sessions/:id/complete', (req: Request, res: Response, next: NextFu
             orgCtx?.facility_id ?? null,
             orgCtx?.department_id ?? null,
             orgCtx?.region_id ?? null,
+            orgCtx?.district_id ?? null,
           ],
         );
       }

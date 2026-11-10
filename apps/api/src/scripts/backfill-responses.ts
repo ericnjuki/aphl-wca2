@@ -3,11 +3,12 @@
 // responses table is empty.
 //
 // Called from server startup after migrations. Uses the user's *current*
-// org context (facility/department/region) for historical rows — document
+// org context (facility/department/district/region) for historical rows — document
 // this caveat; new completions snapshot correctly.
 
 import { query, execute, transaction } from '../db/database';
 import { extractResponses, AssessmentItem, DomainRef } from '../lib/survey-responses';
+import { getOrgContext } from '../lib/org';
 
 interface CompletedAssessmentRow extends Record<string, unknown> {
   id: number;
@@ -52,16 +53,7 @@ export function backfillResponses(): void {
         [domain.id],
       );
 
-      const [orgCtx] = query<{
-        facility_id: number | null;
-        department_id: number | null;
-        region_id: number | null;
-      }>(
-        `SELECT u.facility_id, u.department_id, f.region_id
-         FROM users u LEFT JOIN facilities f ON f.id = u.facility_id
-         WHERE u.id = ?`,
-        [ua.user_id],
-      );
+      const orgCtx = getOrgContext(ua.user_id);
 
       const responses = extractResponses(ua.survey_data, domain, items);
       for (const r of responses) {
@@ -70,8 +62,8 @@ export function backfillResponses(): void {
              (user_assessment_id, user_id, domain_id, domain_code,
               competency_value, subcompetency_value,
               response_level, response_text,
-              facility_id, department_id, region_id)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+              facility_id, department_id, region_id, district_id)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
           [
             ua.id, ua.user_id, r.domain_id, ua.domain_code,
             r.competency_value, r.subcompetency_value,
@@ -79,6 +71,7 @@ export function backfillResponses(): void {
             orgCtx?.facility_id ?? null,
             orgCtx?.department_id ?? null,
             orgCtx?.region_id ?? null,
+            orgCtx?.district_id ?? null,
           ],
         );
         totalRows++;

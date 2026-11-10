@@ -6,18 +6,11 @@ import { Download, FileText, Sheet as SheetIcon, FileType } from 'lucide-react';
 import { toast } from 'sonner';
 import { exportExcel, exportCsv } from '@/lib/reports/export-excel';
 import { exportPdf } from '@/lib/reports/export-pdf';
-import type {
-  NationalReportResponse, RegionReportResponse, FacilityReportResponse,
-  DepartmentReportResponse, IndividualReportResponse, ReportLevel,
-} from '@/types/reports';
-
-type AnyReport =
-  | NationalReportResponse | RegionReportResponse | FacilityReportResponse
-  | DepartmentReportResponse | IndividualReportResponse | null | undefined;
+import type { AnyReport, ReportLevel } from '@/types/reports';
 
 interface Props {
   level: ReportLevel;
-  payload: AnyReport;
+  payload: AnyReport | null | undefined;
 }
 
 export function ExportMenu({ level, payload }: Props) {

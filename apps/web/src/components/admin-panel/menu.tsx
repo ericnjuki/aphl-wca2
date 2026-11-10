@@ -4,7 +4,7 @@ import { NavLink, useLocation } from "react-router-dom";
 import { Ellipsis, type LucideIcon } from "lucide-react";
 
 import { cn } from "@/lib/utils";
-import { getMenuList } from "@/lib/menu-list";
+import { getMenuList, type Role } from "@/lib/menu-list";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { CollapseMenuButton } from "@/components/admin-panel/collapse-menu-button";
@@ -27,7 +27,7 @@ export function Menu({ isOpen }: MenuProps) {
   const pathname = location.pathname;
   const { t } = useCommonTranslation();
   const role = useAuthStore(
-    (s) => (s.user?.role as "admin" | "staff" | undefined) ?? null,
+    (s) => (s.user?.role as Role | undefined) ?? null,
   );
 
   const menuList = getMenuList(pathname, role);

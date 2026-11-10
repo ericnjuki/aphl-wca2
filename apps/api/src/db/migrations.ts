@@ -253,6 +253,59 @@ const migrations: { id: number; sql: string }[] = [
         ON assessment_footnotes(domain_id);
     `,
   },
+  {
+    id: 9,
+    sql: `
+      -- Districts sit between regions and facilities. facilities.region_id is
+      -- kept as an API-maintained copy of districts.region_id so existing
+      -- region queries keep working. Foreign keys are not enforced (no
+      -- PRAGMA foreign_keys) — referential rules live in the API.
+
+      CREATE TABLE IF NOT EXISTS districts (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        code       TEXT    NOT NULL UNIQUE COLLATE NOCASE,
+        name       TEXT    NOT NULL,
+        region_id  INTEGER NOT NULL REFERENCES regions(id),
+        created_at TEXT    NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT    NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE INDEX IF NOT EXISTS idx_districts_region ON districts(region_id);
+
+      ALTER TABLE facilities ADD COLUMN district_id INTEGER REFERENCES districts(id) ON DELETE SET NULL;
+
+      ALTER TABLE user_assessment_responses ADD COLUMN district_id INTEGER REFERENCES districts(id) ON DELETE SET NULL;
+      CREATE INDEX IF NOT EXISTS idx_uar_district ON user_assessment_responses(district_id, domain_code, competency_value);
+    `,
+  },
+  {
+    id: 10,
+    sql: `
+      -- Partner (monitor) users are scoped to one or more regions instead of a
+      -- facility. Foreign keys are not enforced — the admin API keeps this
+      -- table consistent (monitor-only rows, no dangling regions).
+
+      CREATE TABLE IF NOT EXISTS user_regions (
+        user_id   INTEGER NOT NULL REFERENCES users(id),
+        region_id INTEGER NOT NULL REFERENCES regions(id),
+        PRIMARY KEY (user_id, region_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_user_regions_region ON user_regions(region_id);
+    `,
+  },
+  {
+    id: 11,
+    sql: `
+      -- Workbook import: an organisation entity removed from the country setup
+      -- workbook is archived (kept for history) instead of deleted when
+      -- responses or users still reference it. NULL = active.
+      ALTER TABLE regions     ADD COLUMN archived_at TEXT;
+      ALTER TABLE districts   ADD COLUMN archived_at TEXT;
+      ALTER TABLE facilities  ADD COLUMN archived_at TEXT;
+      ALTER TABLE departments ADD COLUMN archived_at TEXT;
+      ALTER TABLE org_roles   ADD COLUMN archived_at TEXT;
+      ALTER TABLE user_titles ADD COLUMN archived_at TEXT;
+    `,
+  },
 ];
 
 export async function runMigrations(db: Database): Promise<void> {

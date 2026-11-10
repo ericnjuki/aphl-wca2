@@ -1,10 +1,13 @@
-import { Navigate, useParams } from 'react-router-dom';
+import { MonitorRegions } from '@/components/reports/MonitorRegions';
+import { reportsLanding } from '@/lib/reports/landing';
+import { Navigate, useParams, useSearchParams } from 'react-router-dom';
 
 import { ContentLayout } from '@/components/admin-panel/content-layout';
 import { useAuthStore } from '@/store/auth';
 import { ReportFilterBar } from '@/components/reports/ReportFilterBar';
 import { NationalReport } from '@/components/reports/levels/NationalReport';
 import { RegionReport } from '@/components/reports/levels/RegionReport';
+import { DistrictReport } from '@/components/reports/levels/DistrictReport';
 import { FacilityReport } from '@/components/reports/levels/FacilityReport';
 import { DepartmentReport } from '@/components/reports/levels/DepartmentReport';
 import { IndividualReport } from '@/components/reports/levels/IndividualReport';
@@ -12,6 +15,7 @@ import { ExportMenu } from '@/components/reports/ExportMenu';
 import {
   useNationalReport,
   useRegionReport,
+  useDistrictReport,
   useFacilityReport,
   useDepartmentReport,
   useIndividualReport,
@@ -24,33 +28,34 @@ const baseUrl = ENV.VITE_BASE_URL || '/';
 function ReportsPage() {
   const params = useParams();
   const regionId     = params.regionId     ? Number(params.regionId)     : null;
+  const districtId   = params.districtId   ? Number(params.districtId)   : null;
   const facilityId   = params.facilityId   ? Number(params.facilityId)   : null;
   const departmentId = params.departmentId ? Number(params.departmentId) : null;
   const userId       = params.userId       ? Number(params.userId)       : null;
+  // Department reports are narrowed to the facility they were opened from.
+  const [searchParams] = useSearchParams();
+  const departmentFacilityId = searchParams.get('facility_id') ? Number(searchParams.get('facility_id')) : null;
 
   const level: ReportLevel =
     userId != null       ? 'individual'
     : departmentId != null ? 'department'
     : facilityId != null   ? 'facility'
+    : districtId != null   ? 'district'
     : regionId != null     ? 'region'
     : 'national';
 
-  // Staff cannot view the national report (denied by report-scope on the API).
-  // When they land on /reports, send them to their facility — or, if they
-  // have no facility, to their own individual report which is always allowed.
+  // Only admins may view the national report (enforced by report-scope on the
+  // API). Everyone else is redirected, or — partner users with several
+  // regions — shown a region picker.
   const user = useAuthStore((s) => s.user);
-  const redirectTarget =
-    level === 'national' && user && user.role !== 'admin'
-      ? (user.facility_id != null
-          ? `${baseUrl}reports/facilities/${user.facility_id}`
-          : `${baseUrl}reports/users/${user.id}`)
-      : null;
+  const { redirect: redirectTarget, showRegionPicker } = reportsLanding(user, level, baseUrl);
 
   // Fetch only the active level's data — other hooks stay disabled via null ids.
-  const national   = useNationalReport(redirectTarget == null);
+  const national   = useNationalReport(redirectTarget == null && !showRegionPicker);
   const region     = useRegionReport(regionId);
+  const district   = useDistrictReport(districtId);
   const facility   = useFacilityReport(facilityId);
-  const department = useDepartmentReport(departmentId);
+  const department = useDepartmentReport(departmentId, departmentFacilityId);
   const individual = useIndividualReport(userId);
 
   if (redirectTarget) return <Navigate to={redirectTarget} replace />;
@@ -60,16 +65,24 @@ function ReportsPage() {
   if (level === 'region' && region.data) {
     crumbs.push({ label: region.data.region.name });
   }
+  if (level === 'district' && district.data) {
+    const d = district.data.district;
+    crumbs.push({ label: d.region_name ?? 'Region', to: `${baseUrl}reports/regions/${d.region_id}` });
+    crumbs.push({ label: d.name });
+  }
   if (level === 'facility' && facility.data) {
-    if (facility.data.facility.region_id) {
-      crumbs.push({
-        label: 'Region',
-        to: `${baseUrl}reports/regions/${facility.data.facility.region_id}`,
-      });
+    const fac = facility.data.facility;
+    if (fac.region_id) {
+      crumbs.push({ label: fac.region_name ?? 'Region', to: `${baseUrl}reports/regions/${fac.region_id}` });
     }
-    crumbs.push({ label: facility.data.facility.name });
+    if (fac.district_id) {
+      crumbs.push({ label: fac.district_name ?? 'District', to: `${baseUrl}reports/districts/${fac.district_id}` });
+    }
+    crumbs.push({ label: fac.name });
   }
   if (level === 'department' && department.data) {
+    const fac = department.data.facility;
+    if (fac) crumbs.push({ label: fac.name, to: `${baseUrl}reports/facilities/${fac.id}` });
     crumbs.push({ label: department.data.department.name });
   }
   if (level === 'individual' && individual.data) {
@@ -81,6 +94,7 @@ function ReportsPage() {
   const exportPayload =
     level === 'national'   ? national.data :
     level === 'region'     ? region.data :
+    level === 'district'   ? district.data :
     level === 'facility'   ? facility.data :
     level === 'department' ? department.data :
     level === 'individual' ? individual.data : null;
@@ -91,13 +105,15 @@ function ReportsPage() {
         <ReportFilterBar
           level={level}
           crumbs={crumbs}
-          rightSlot={<ExportMenu level={level} payload={exportPayload} />}
+          rightSlot={showRegionPicker ? undefined : <ExportMenu level={level} payload={exportPayload} />}
         />
         <div className="flex-1">
-          {level === 'national'   && <NationalReport />}
+          {level === 'national'   && !showRegionPicker && <NationalReport />}
+          {level === 'national'   && showRegionPicker  && <MonitorRegions regions={user?.regions ?? []} />}
           {level === 'region'     && regionId     != null && <RegionReport     regionId={regionId}     />}
+          {level === 'district'   && districtId   != null && <DistrictReport   districtId={districtId}   />}
           {level === 'facility'   && facilityId   != null && <FacilityReport   facilityId={facilityId} />}
-          {level === 'department' && departmentId != null && <DepartmentReport departmentId={departmentId} />}
+          {level === 'department' && departmentId != null && <DepartmentReport departmentId={departmentId} facilityId={departmentFacilityId} />}
           {level === 'individual' && userId       != null && <IndividualReport userId={userId} />}
         </div>
       </div>

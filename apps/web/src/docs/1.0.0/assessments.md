@@ -2,62 +2,41 @@
 
 Define the assessment frameworks your staff will be asked to complete. **Admin-only.**
 
-Domain-level actions live in the **⋯ (domain options)** menu next to the domain selector: **New**, **Edit**, **Import** (▸ **Domains** / **Footnotes**), and **Delete**. Item-level actions live in the **⋯ (item options)** menu on the right of the toolbar once a domain is selected: **Add Item** and **Import Items**.
+Domain-level actions live in the **⋯ (domain options)** menu next to the domain selector: **New**, **Edit**, **Export catalogue**, **Import catalogue** and **Delete**. The **⋯ (item options)** menu on the right of the toolbar (once a domain is selected) has **Add Item**.
+
+## The bundled catalogue
+
+The app ships with an assessment catalogue — 20 domains, their competency items and footnotes — that is loaded automatically the first time it starts. Loading only ever adds what is missing (a missing domain; items or footnotes for a domain that has none), so restarts never overwrite changes you have made.
 
 ## Domains
 
-A **domain** is a named assessment framework, e.g. *Bioinformatics (BIO)*, *Administrative Controls (SAC)*. Each domain has:
-
-- **Code** — short uppercase identifier used in URLs and exports
-- **Name** — human-readable label
-- **Version** — bump when you revise items; old responses keep their old version
-- **Purpose** — a short purpose statement shown on the survey **Start** page (optional)
-- **Introduction** — a longer introduction shown on the survey **Start** page (optional)
-
-### Importing / updating domains from CSV
-
-**⋯ → Import → Domains** uploads a CSV. Columns:
-
-```
-assessment_code,assessment_name
-```
-
-Optional `purpose` and `introduction` columns are supported — quote any field that contains commas. Re-importing **updates** existing domains (matched by code) with the new name/purpose/introduction and inserts any new ones, so this is the bulk way to set intro text across many domains at once.
+A **domain** is a named assessment framework, e.g. *Bioinformatics (BIO)*. Each domain has a **code**, a **name**, a **version** (bump it when you revise items; old responses keep their old version), and optional **purpose** and **introduction** text shown on the survey **Start** page.
 
 ## Items
 
-Each domain has many **items** (subcompetencies). Every item has:
-
-- `competency_value` — groups the item under a broader competency
-- `competency_text` — label for the grouping
-- `subcompetency_value` — unique within the competency
-- `subcompetency_text` — label for the row
-- Five descriptors: **beginner / competent / proficient / expert / N/A** — what each level looks like in practice
-
-### Importing items from CSV
-
-The bulk path. With a domain selected, open the **⋯ (item options)** menu and click **Import Items**, then upload a CSV with these columns:
-
-```
-competency_value,competency_text,subcompetency_value,subcompetency_text,beginner,competent,proficient,expert,na
-```
-
-Each row becomes one item. Order in the file becomes `sort_order`. You can re-import to append more; items are never deduplicated automatically.
+Each domain has many **items** (subcompetencies), grouped under competencies. Every item has a `competency_value` and `competency_text`, a `subcompetency_value` (unique within the domain) and `subcompetency_text`, and five descriptors: **beginner / competent / proficient / expert / N/A**.
 
 ## Footnotes
 
-Footnotes define the marked terms (e.g. `*`, `‡`) that appear in item text. Each footnote is a **symbol → definition** pair belonging to a domain. On the survey, a footnote shows at the bottom of a page **only when its symbol appears in that page's text**, so respondents see just the definitions relevant to what's in front of them.
+Footnotes define marked terms (e.g. `*`, `‡`) used in item text: a **symbol → definition** pair per domain. On the survey a footnote shows at the bottom of a page only when its symbol appears on that page.
 
-Import them with **⋯ → Import → Footnotes** — a global import (not tied to the selected domain). CSV columns:
+## Catalogue workbook
 
-```
-domain_code,symbol,definition,sort_order
-```
+To change many items at once, use the catalogue workbook:
 
-`sort_order` is optional. Because the import is keyed by `domain_code`, one file can carry footnotes for many domains; for each domain present in the file, its existing footnotes are **replaced** with that file's rows. Rows whose `domain_code` doesn't match a known domain are reported and skipped.
+1. **⋯ → Export catalogue** downloads `assessment-catalogue.xlsx` with the current catalogue.
+2. Edit it in Excel. Tabs and columns (required in **bold**):
+
+| Tab | Columns | Matched by |
+|---|---|---|
+| Domains | **domain_code**, **domain_name**, **version**, purpose, introduction | domain_code |
+| Items | **domain_code**, **competency_value**, competency_text, **subcompetency_value**, **subcompetency_text**, **beginner**, **competent**, **proficient**, **expert**, na | domain_code + subcompetency_value |
+| Footnotes | **domain_code**, **symbol**, **definition**, sort_order | domain_code + symbol |
+
+3. **⋯ → Import catalogue** uploads it and shows a preview of what will be added and updated, with any errors pinned at the top. Apply when it looks right.
+
+The catalogue import **only adds and updates** — nothing is ever removed. Delete items or domains here on the page instead. New items are added after a domain's existing items in sheet order; a blank footnote `sort_order` keeps the footnote's current position. Changing the `competency_value` of an item that already exists is an error in the preview, because past responses use it; change the item's text instead.
 
 ## Effects on surveys
 
-Editing items affects **new** sessions only. Already-completed assessments keep their original JSON blob and response rows, so historical reports don't retroactively change when you tune the descriptors.
-
-Bump the domain **version** if you're making substantive changes and want to distinguish old vs new snapshots in reports.
+Editing items affects **new** sessions only. Completed assessments keep their original answers and response rows, so historical reports don't change when you tune the descriptors. Bump the domain **version** for substantive changes.

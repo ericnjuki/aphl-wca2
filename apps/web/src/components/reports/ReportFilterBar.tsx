@@ -34,6 +34,8 @@ export function ReportFilterBar({ level, crumbs = [], rightSlot }: Props) {
     useReportsFiltersStore();
   const navigate = useNavigate();
   const isAdmin = useAuthStore((s) => s.user?.role === 'admin');
+  // The API always applies approved-only for partners, so the switch is locked on.
+  const isMonitor = useAuthStore((s) => s.user?.role === 'monitor');
   // Suppress unused-var warning for useMatches import (kept for future breadcrumb auto-build)
   useMatches;
 
@@ -68,17 +70,23 @@ export function ReportFilterBar({ level, crumbs = [], rightSlot }: Props) {
         <DomainSelect value={domainCode} onChange={setDomain} />
         <CompetencySelect domainCode={domainCode} value={competencyValue} onChange={setCompetency} />
 
-        <div className="flex items-center gap-2 pl-2">
-          <Switch
-            id="approved-only"
-            checked={approvedOnly}
-            onCheckedChange={setApprovedOnly}
-          />
-          <Label htmlFor="approved-only" className="flex items-center gap-1 text-xs text-muted-foreground">
-            <ShieldCheck className="h-3 w-3" />
-            Approved only
-          </Label>
-        </div>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <div className="flex items-center gap-2 pl-2">
+              <Switch
+                id="approved-only"
+                checked={isMonitor || approvedOnly}
+                onCheckedChange={setApprovedOnly}
+                disabled={isMonitor}
+              />
+              <Label htmlFor="approved-only" className="flex items-center gap-1 text-xs text-muted-foreground">
+                <ShieldCheck className="h-3 w-3" />
+                Approved only
+              </Label>
+            </div>
+          </TooltipTrigger>
+          {isMonitor && <TooltipContent>Partners see approved submissions only</TooltipContent>}
+        </Tooltip>
 
         <div className="flex-1" />
 

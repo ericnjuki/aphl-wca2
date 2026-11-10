@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   MoreHorizontalIcon,
   Pencil,
   Plus,
   Trash2,
-  Upload,
+  Download,
   FileUp,
   Search,
 } from "lucide-react";
@@ -28,18 +28,8 @@ import {
   DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuSeparator,
-  DropdownMenuSub,
-  DropdownMenuSubContent,
-  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import {
   Sheet,
   SheetContent,
@@ -71,7 +61,8 @@ import {
 import { TablePagination } from "@/components/ui/table-pagination";
 import { TableFillerRow } from "@/components/ui/table-filler";
 import { Textarea } from "@/components/ui/textarea";
-import { api } from "@/lib/api";
+import { api, downloadFile } from "@/lib/api";
+import { ImportWorkbookDialog } from "@/components/import/ImportWorkbookDialog";
 import { useAuthStore } from "@/store/auth";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -100,17 +91,6 @@ interface AssessmentItem {
   expert: string;
   na: string;
   sort_order: number;
-}
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-function readFileAsText(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = (e) => resolve(e.target?.result as string);
-    reader.onerror = () => reject(new Error("Failed to read file"));
-    reader.readAsText(file);
-  });
 }
 
 // ── Domain form dialog ────────────────────────────────────────────────────────
@@ -248,72 +228,6 @@ function DomainFormDialog({
         </form>
       </SheetContent>
     </Sheet>
-  );
-}
-
-// ── Import domains CSV dialog ─────────────────────────────────────────────────
-
-interface ImportDomainsDialogProps {
-  open: boolean;
-  onClose: () => void;
-  onImported: () => void;
-}
-
-function ImportDomainsDialog({
-  open,
-  onClose,
-  onImported,
-}: ImportDomainsDialogProps) {
-  const fileRef = useRef<HTMLInputElement>(null);
-  const [loading, setLoading] = useState(false);
-
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    const file = fileRef.current?.files?.[0];
-    if (!file) {
-      toast.error("Select a CSV file first.");
-      return;
-    }
-    setLoading(true);
-    const csv = await readFileAsText(file);
-    const res = await api.post<{ imported: number; updated: number; skipped: number }>(
-      "/assessments/domains/import",
-      { csv },
-    );
-    setLoading(false);
-    if (res.error !== null) {
-      toast.error(res.error);
-      return;
-    }
-    toast.success(
-      `Imported ${res.data.imported}, updated ${res.data.updated}, skipped ${res.data.skipped}.`,
-    );
-    onImported();
-    onClose();
-  }
-
-  return (
-    <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>Import Domains from CSV</DialogTitle>
-        </DialogHeader>
-        <form onSubmit={handleSubmit} className="flex flex-col gap-4 py-2">
-          <p className="text-sm text-muted-foreground">
-            Required columns: <code>assessment_code</code>, <code>assessment_name</code>. Optional: <code>purpose</code>, <code>introduction</code>. Existing domains are updated.
-          </p>
-          <Input ref={fileRef} type="file" accept=".csv" required />
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={onClose}>
-              Cancel
-            </Button>
-            <Button type="submit" disabled={loading}>
-              {loading ? "Importing…" : "Import"}
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
   );
 }
 
@@ -462,124 +376,6 @@ function ItemFormDialog({
   );
 }
 
-// ── Import items CSV dialog ───────────────────────────────────────────────────
-
-interface ImportItemsDialogProps {
-  open: boolean;
-  onClose: () => void;
-  domainId: number;
-  onImported: () => void;
-}
-
-function ImportItemsDialog({
-  open,
-  onClose,
-  domainId,
-  onImported,
-}: ImportItemsDialogProps) {
-  const fileRef = useRef<HTMLInputElement>(null);
-  const [loading, setLoading] = useState(false);
-
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    const file = fileRef.current?.files?.[0];
-    if (!file) {
-      toast.error("Select a CSV file first.");
-      return;
-    }
-    setLoading(true);
-    const csv = await readFileAsText(file);
-    const res = await api.post<{ imported: number }>(
-      `/assessments/domains/${domainId}/items/import`,
-      { csv },
-    );
-    setLoading(false);
-    if (res.error !== null) {
-      toast.error(res.error);
-      return;
-    }
-    toast.success(`Imported ${res.data.imported} item(s).`);
-    onImported();
-    onClose();
-  }
-
-  return (
-    <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>Import Items from CSV</DialogTitle>
-        </DialogHeader>
-        <form onSubmit={handleSubmit} className="flex flex-col gap-4 py-2">
-          <p className="text-sm text-muted-foreground">
-            Required columns: <code>competency_value</code>,{" "}
-            <code>competency_text</code>, <code>subcompetency_value</code>,{" "}
-            <code>subcompetency_text</code>. Optional: <code>beginner</code>,{" "}
-            <code>competent</code>, <code>proficient</code>, <code>expert</code>
-            , <code>na</code>.
-          </p>
-          <Input ref={fileRef} type="file" accept=".csv" required />
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={onClose}>
-              Cancel
-            </Button>
-            <Button type="submit" disabled={loading}>
-              {loading ? "Importing…" : "Import"}
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-// ── Import footnotes CSV dialog ───────────────────────────────────────────────
-
-function ImportFootnotesDialog({
-  open, onClose, onImported,
-}: { open: boolean; onClose: () => void; onImported: () => void }) {
-  const fileRef = useRef<HTMLInputElement>(null);
-  const [loading, setLoading] = useState(false);
-
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    const file = fileRef.current?.files?.[0];
-    if (!file) { toast.error("Select a CSV file first."); return; }
-    setLoading(true);
-    const csv = await readFileAsText(file);
-    const res = await api.post<{ imported: number; domainsUpdated: number; unknownCodes: string[] }>(
-      `/assessments/footnotes/import`, { csv },
-    );
-    setLoading(false);
-    if (res.error !== null) { toast.error(res.error); return; }
-    const unknown = res.data.unknownCodes.length
-      ? ` ${res.data.unknownCodes.length} unknown domain code(s) skipped.`
-      : "";
-    toast.success(
-      `Imported ${res.data.imported} footnote(s) across ${res.data.domainsUpdated} domain(s).${unknown}`,
-    );
-    onImported();
-    onClose();
-  }
-
-  return (
-    <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader><DialogTitle>Import footnotes</DialogTitle></DialogHeader>
-        <form onSubmit={handleSubmit} className="flex flex-col gap-4 py-2">
-          <p className="text-sm text-muted-foreground">
-            Columns: <code>domain_code</code>, <code>symbol</code>, <code>definition</code>. Optional: <code>sort_order</code>. Footnotes are replaced for each domain present in the file.
-          </p>
-          <Input ref={fileRef} type="file" accept=".csv" required />
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
-            <Button type="submit" disabled={loading}>{loading ? "Importing…" : "Import"}</Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 function AssessmentsPage() {
@@ -594,14 +390,17 @@ function AssessmentsPage() {
   const [editingDomain, setEditingDomain] = useState<AssessmentDomain | null>(
     null,
   );
-  const [importDomainsOpen, setImportDomainsOpen] = useState(false);
   const [deleteDomainOpen, setDeleteDomainOpen] = useState(false);
 
   const [itemFormOpen, setItemFormOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<AssessmentItem | null>(null);
-  const [importItemsOpen, setImportItemsOpen] = useState(false);
-  const [importFootnotesOpen, setImportFootnotesOpen] = useState(false);
   const [deleteItemId, setDeleteItemId] = useState<number | null>(null);
+  const [importCatalogueOpen, setImportCatalogueOpen] = useState(false);
+
+  async function exportCatalogue() {
+    const error = await downloadFile("/assessments/catalogue/export", "assessment-catalogue.xlsx");
+    if (error) toast.error(error);
+  }
 
   const [searchInput, setSearchInput] = useState("");
   const [page, setPage] = useState(0);
@@ -742,23 +541,12 @@ function AssessmentsPage() {
                     >
                       <Pencil className="h-4 w-4" /> Edit
                     </DropdownMenuItem>
-                    <DropdownMenuSub>
-                      <DropdownMenuSubTrigger>
-                        <Upload className="h-4 w-4" /> Import
-                      </DropdownMenuSubTrigger>
-                      <DropdownMenuSubContent>
-                        <DropdownMenuItem
-                          onClick={() => setImportDomainsOpen(true)}
-                        >
-                          Domains
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onClick={() => setImportFootnotesOpen(true)}
-                        >
-                          Footnotes
-                        </DropdownMenuItem>
-                      </DropdownMenuSubContent>
-                    </DropdownMenuSub>
+                    <DropdownMenuItem onClick={() => void exportCatalogue()}>
+                      <Download className="h-4 w-4" /> Export catalogue
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => setImportCatalogueOpen(true)}>
+                      <FileUp className="h-4 w-4" /> Import catalogue
+                    </DropdownMenuItem>
                   </DropdownMenuGroup>
                   <DropdownMenuSeparator />
                   <DropdownMenuGroup>
@@ -812,9 +600,6 @@ function AssessmentsPage() {
             >
               <Plus className="h-4 w-4" /> Add Item
             </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => setImportItemsOpen(true)}>
-              <FileUp className="h-4 w-4" /> Import Items
-            </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       )}
@@ -856,7 +641,7 @@ function AssessmentsPage() {
                     <TableRow>
                       <TableCell colSpan={isAdmin ? 5 : 4} className="py-8 text-center text-muted-foreground">
                         {items.length === 0
-                          ? `No items yet.${isAdmin ? ' Use "Add Item" or "Import Items" to add competencies.' : ''}`
+                          ? `No items yet.${isAdmin ? ' Use "Add Item", or "Import catalogue" in the domain menu, to add competencies.' : ''}`
                           : "No items match your search."}
                       </TableCell>
                     </TableRow>
@@ -934,19 +719,20 @@ function AssessmentsPage() {
           qc.invalidateQueries({ queryKey: ["assessments", "domains"] })
         }
       />
-      <ImportDomainsDialog
-        open={importDomainsOpen}
-        onClose={() => setImportDomainsOpen(false)}
-        onImported={() =>
-          qc.invalidateQueries({ queryKey: ["assessments", "domains"] })
+      <ImportWorkbookDialog
+        open={importCatalogueOpen}
+        onClose={() => setImportCatalogueOpen(false)}
+        title="Import assessment catalogue"
+        hint={
+          <>
+            Upload an assessment catalogue workbook (.xlsx, up to 10 MB) — start from <b>Export catalogue</b>.
+            New domains, items and footnotes are added and changed ones updated; nothing is ever removed.
+          </>
         }
-      />
-      <ImportFootnotesDialog
-        open={importFootnotesOpen}
-        onClose={() => setImportFootnotesOpen(false)}
-        onImported={() =>
-          // A batch import can touch many domains' footnotes; bust all survey
-          // model queries so re-opened surveys pick up the new footnotes.
+        previewPath="/assessments/catalogue/import/preview"
+        applyPath="/assessments/catalogue/import/apply"
+        onApplied={() =>
+          // Can touch any domain's items and footnotes; refresh every catalogue query.
           qc.invalidateQueries({ queryKey: ["assessments"] })
         }
       />
@@ -982,16 +768,6 @@ function AssessmentsPage() {
             domainId={selectedDomain.id}
             initial={editingItem}
             onSaved={() =>
-              qc.invalidateQueries({
-                queryKey: ["assessments", selectedId, "items"],
-              })
-            }
-          />
-          <ImportItemsDialog
-            open={importItemsOpen}
-            onClose={() => setImportItemsOpen(false)}
-            domainId={selectedDomain.id}
-            onImported={() =>
               qc.invalidateQueries({
                 queryKey: ["assessments", selectedId, "items"],
               })

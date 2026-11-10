@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
 
-FROM node:20-alpine AS web-builder
+FROM node:22-alpine AS web-builder
 RUN corepack enable && corepack prepare pnpm@10.15.1 --activate
 WORKDIR /app
 
@@ -21,12 +21,17 @@ ENV VITE_BASE_URL=$VITE_BASE_URL
 
 RUN pnpm --filter @workforce-competency/web run build
 
-FROM nginx:1.27-alpine AS runtime
+FROM nginx:1.30-alpine AS runtime
 
+# The site config is rendered at start-up from nginx/templates by
+# 40-wca-config.sh: HTTP until a certificate exists for DOMAIN, then HTTPS.
 RUN rm -f /etc/nginx/conf.d/default.conf
-COPY nginx/conf.d/templates /etc/nginx/conf.d/templates
-COPY nginx/docker-entrypoint.d/10-render-conf.sh /docker-entrypoint.d/10-render-conf.sh
-RUN chmod +x /docker-entrypoint.d/10-render-conf.sh
+COPY nginx/snippets/wca-app.conf.template /etc/nginx/wca-snippets/wca-app.conf.template
+COPY nginx/templates/ /etc/nginx/wca-templates/
+COPY nginx/docker-entrypoint.d/40-wca-config.sh /docker-entrypoint.d/40-wca-config.sh
+# Strip CR in case the files were checked out with Windows line endings.
+RUN sed -i 's/\r$//' /docker-entrypoint.d/40-wca-config.sh /etc/nginx/wca-templates/* /etc/nginx/wca-snippets/* \
+    && chmod +x /docker-entrypoint.d/40-wca-config.sh
 COPY --from=web-builder /app/apps/web/dist /usr/share/nginx/html
 
 EXPOSE 80 443

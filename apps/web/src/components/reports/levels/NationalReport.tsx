@@ -6,6 +6,7 @@ import { MaturityBreakdownTable } from '../MaturityBreakdownTable';
 import { ChartSkeleton } from '../ChartSkeleton';
 import { ReportKpiCards } from '../ReportKpiCards';
 import { UnassignedBanner } from '../UnassignedBanner';
+import { archivedLabel } from '@/lib/reports/archived';
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from '@/components/ui/empty';
 import { FileText } from 'lucide-react';
 
@@ -20,10 +21,6 @@ export function NationalReport() {
   if (isError) return <div className="p-6 text-sm text-destructive">Error: {(error as Error).message}</div>;
 
   const coveredRegions = data.items.filter((r) => r.respondents > 0).length;
-  const avgLevel = data.meta.total_respondents > 0
-    ? data.items.reduce((s, r) => s + (r.avg_level ?? 0) * r.respondents, 0) /
-      Math.max(data.items.reduce((s, r) => s + r.respondents, 0), 1)
-    : null;
 
   if (data.meta.total_respondents === 0) {
     return (
@@ -46,7 +43,7 @@ export function NationalReport() {
       <UnassignedBanner level="national" count={data.meta.unassigned_respondents} />
       <ReportKpiCards
         totalRespondents={data.meta.total_respondents}
-        avgLevel={avgLevel}
+        avgLevel={data.meta.avg_level}
         bucketsCovered={coveredRegions}
         bucketsLabel="regions"
       />
@@ -59,7 +56,7 @@ export function NationalReport() {
           <MaturityStackedBar
             data={data.items.map((r) => ({
               key: String(r.region_id),
-              label: r.region_name,
+              label: archivedLabel(r.region_name, r.archived),
               ...r,
             }))}
             onBarClick={(key) => navigate(`${baseUrl}reports/regions/${key}`)}
@@ -68,7 +65,7 @@ export function NationalReport() {
         </div>
       </div>
       <MaturityBreakdownTable
-        rows={data.items.map((r) => ({ key: String(r.region_id), label: r.region_name, ...r }))}
+        rows={data.items.map((r) => ({ key: String(r.region_id), label: archivedLabel(r.region_name, r.archived), ...r }))}
         onRowClick={(key) => navigate(`${baseUrl}reports/regions/${key}`)}
         labelHeader="Region"
       />

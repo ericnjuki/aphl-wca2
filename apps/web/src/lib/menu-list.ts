@@ -23,6 +23,8 @@ type Menu = {
   icon: LucideIcon;
   submenus?: Submenu[];
   adminOnly?: boolean;
+  /** If set, only these roles see the item. */
+  roles?: Exclude<Role, null>[];
 };
 
 type Group = {
@@ -33,7 +35,7 @@ type Group = {
 const ENV = import.meta.env;
 const baseUrl = ENV.VITE_BASE_URL || "/";
 
-export type Role = "admin" | "staff" | null;
+export type Role = "admin" | "staff" | "monitor" | null;
 
 export function getMenuList(_pathname: string, role: Role = null): Group[] {
   const groups: Group[] = [
@@ -45,6 +47,7 @@ export function getMenuList(_pathname: string, role: Role = null): Group[] {
           label: "navigation.survey",
           icon: Form,
           submenus: [],
+          roles: ["admin", "staff"],
         },
       ],
     },
@@ -55,6 +58,7 @@ export function getMenuList(_pathname: string, role: Role = null): Group[] {
           href: `${baseUrl}my-assessments`,
           label: "navigation.my_assessments",
           icon: ClipboardList,
+          roles: ["admin", "staff"],
         },
         {
           href: `${baseUrl}reports`,
@@ -105,12 +109,17 @@ export function getMenuList(_pathname: string, role: Role = null): Group[] {
     },
   ];
 
-  // Filter admin-only items for non-admin callers, and drop groups that
-  // become empty afterwards.
+  // Filter admin-only and role-restricted items, and drop groups that become
+  // empty afterwards.
   return groups
     .map((g) => ({
       ...g,
-      menus: g.menus.filter((m) => !m.adminOnly || role === "admin"),
+      menus: g.menus.filter(
+        (m) =>
+          (!m.adminOnly || role === "admin") &&
+          // Unknown role (still loading) keeps the default non-admin menu.
+          (!m.roles || role === null || m.roles.includes(role)),
+      ),
     }))
     .filter((g) => g.menus.length > 0);
 }

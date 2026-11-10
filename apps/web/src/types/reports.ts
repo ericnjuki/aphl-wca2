@@ -1,6 +1,6 @@
 // Response shapes for /api/v1/reports — keep in sync with api/src/routes/reports.ts.
 
-export type ReportLevel = 'national' | 'region' | 'facility' | 'department' | 'individual';
+export type ReportLevel = 'national' | 'region' | 'district' | 'facility' | 'department' | 'individual';
 
 export type MaturityLevel = 0 | 1 | 2 | 3 | 4;
 
@@ -13,6 +13,13 @@ export interface MaturityCounts {
   count_competent: number;
   count_proficient: number;
   count_expert: number;
+  // Partner view only. 'small': the bucket has 1–2 respondents. 'complementary':
+  // hidden as well so a lone small bucket can't be recovered by subtraction.
+  // Counts are blanked (zero, avg null) by the API. Absent on visible rows.
+  suppressed?: 'small' | 'complementary' | 'parent';
+  // An archived region/district/facility/department listed because it still
+  // has respondents in this view. Absent on active rows.
+  archived?: boolean;
 }
 
 export interface ReportMeta {
@@ -21,6 +28,13 @@ export interface ReportMeta {
   // on level) is NULL, so their data doesn't land in any bucket below.
   // Surfaced in the UI so users know why buckets look empty.
   unassigned_respondents: number;
+  // Average maturity over all respondents in the view (levels 1–4, N/A
+  // excluded). Null when there are none, or for partners when the view has
+  // only 1–2 respondents.
+  avg_level: number | null;
+  // Partner reports only: this district/facility's own row is hidden in the
+  // list above it, so the whole report is blanked (items carry 'parent').
+  privacy_hidden?: boolean;
   generated_at: string;
   filters: {
     domain_code: string | null;
@@ -42,13 +56,30 @@ export interface NationalReportResponse {
 }
 
 export interface RegionItem extends MaturityCounts {
-  facility_id: number;
-  facility_name: string;
+  district_id: number;
+  district_name: string;
+}
+export interface UndistrictedFacility {
+  id: number;
+  name: string;
 }
 export interface RegionReportResponse {
   level: 'region';
   region: { id: number; name: string };
   items: RegionItem[];
+  // Facilities in this region with no district yet — listed so they stay reachable.
+  undistricted_facilities: UndistrictedFacility[];
+  meta: ReportMeta;
+}
+
+export interface DistrictItem extends MaturityCounts {
+  facility_id: number;
+  facility_name: string;
+}
+export interface DistrictReportResponse {
+  level: 'district';
+  district: { id: number; name: string; region_id: number; region_name: string | null };
+  items: DistrictItem[];
   meta: ReportMeta;
 }
 
@@ -58,7 +89,14 @@ export interface FacilityItem extends MaturityCounts {
 }
 export interface FacilityReportResponse {
   level: 'facility';
-  facility: { id: number; name: string; region_id: number | null };
+  facility: {
+    id: number;
+    name: string;
+    region_id: number | null;
+    region_name: string | null;
+    district_id: number | null;
+    district_name: string | null;
+  };
   items: FacilityItem[];
   meta: ReportMeta;
 }
@@ -72,6 +110,8 @@ export interface DepartmentItem extends MaturityCounts {
 export interface DepartmentReportResponse {
   level: 'department';
   department: { id: number; name: string };
+  // Facility the grid is narrowed to; null for the admin cross-facility view.
+  facility: { id: number; name: string } | null;
   items: DepartmentItem[];
   meta: ReportMeta;
 }
@@ -112,3 +152,11 @@ export interface ReportFilters {
   competency_value?: string;
   approved_only?: boolean;
 }
+
+export type AnyReport =
+  | NationalReportResponse
+  | RegionReportResponse
+  | DistrictReportResponse
+  | FacilityReportResponse
+  | DepartmentReportResponse
+  | IndividualReportResponse;

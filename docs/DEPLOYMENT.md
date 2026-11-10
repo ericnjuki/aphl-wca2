@@ -2,9 +2,9 @@
 
 This app ships as two Docker images — `api` (internal-only, never exposed to the host) and `nginx` (serves the built SPA and reverse-proxies `/api/` to `api`). The `nginx` container is the only thing that ever binds a host port, and it can run in one of three **TLS modes**:
 
-- **`internal`** — this container terminates TLS itself via certbot (binds 80 + 443 directly).
-- **`external`** — TLS is already terminated by a reverse proxy that exists on the host (system nginx, another app's proxy, etc.); this container only ever serves plain HTTP on one port.
-- **`none`** — plain HTTP only, no TLS anywhere, no domain needed. For internal networks, testing, or a first deploy before you've decided how (or whether) to add TLS.
+- **`internal`** (the default; `TLS_MODE` empty) — the stack terminates TLS itself. It binds 80 + 443, serves plain HTTP until the `certbot` service has a Let's Encrypt certificate for `DOMAIN`, then switches to HTTPS on its own and renews automatically.
+- **`external`** (`TLS_MODE=external` + `docker-compose.external.yml`) — TLS is already terminated by a reverse proxy that exists on the host (system nginx, another app's proxy, etc.); this container only ever serves plain HTTP on one port (`APP_PORT`), and certbot isn't started.
+- **`none`** — plain HTTP only, no TLS anywhere, no domain needed (same infrastructure as `external`). For internal networks, testing, or a first deploy before you've decided how (or whether) to add TLS.
 
 `internal` and `none` are self-contained. `external` also needs an existing reverse proxy on the host that already has a cert for your domain — this repo doesn't create or manage that proxy.
 
@@ -31,13 +31,13 @@ This app ships as two Docker images — `api` (internal-only, never exposed to t
 4. **git** — to clone the repo onto the box.
 
 5. **Firewall ports**, depending on TLS mode:
-   - `internal` — open **80 and 443** (or whichever `HTTP_PORT`/`HTTPS_PORT` you choose) — port 80 is also needed for ACME HTTP-01 renewals.
+   - `internal` — open **80 and 443**. Port 80 is also needed for ACME HTTP-01 issuance and renewals.
    - `external` / `none` — open only the single `APP_PORT` you need (e.g. 8888). For `external`, 80/443 belong to the host's *own* reverse proxy, not this app.
 
 6. **DNS** — only relevant for `internal` mode: the domain must already resolve to the box's IP before requesting a certificate. `external` and `none` don't need DNS to be pointed at this app at all (for `external`, DNS points at the host's existing proxy, which is presumably already set up).
 
 7. **TLS material** — where it lives depends on mode:
-   - **`internal` mode**: real certs must exist at `./nginx/letsencrypt/live/<domain>/{fullchain,privkey}.pem` before HTTPS will actually work. On a brand-new domain these don't exist yet — see the certbot bootstrap steps in Walkthrough B below.
+   - **`internal` mode**: the `certbot` service writes certificates to `./nginx/letsencrypt/` once `DOMAIN` and `LETSENCRYPT_EMAIL` are set. Nothing to do by hand; see Walkthrough B.
    - **`external` mode**: the cert lives on the *host's* system nginx, entirely outside this repo. The deploy CLI only asks for its path so it can fill in the generated nginx snippet — it never touches or copies the cert itself.
    - **`none` mode**: nothing — there's no TLS anywhere in this setup.
 
@@ -97,6 +97,8 @@ Note the trailing `/wca/` on `proxy_pass` — since this app's nginx expects to 
 
 By default the app is served at the domain (or IP) root. Set `BASE_PATH` (e.g. `/wca`, no trailing slash) during `pnpm run deploy` to mount it under a subpath instead — useful when you don't have a dedicated subdomain available and need to host several apps off one domain by path. Works with any TLS mode.
 
+To keep an old domain working after moving the app under a path, set `ROOT_REDIRECT_URL` (e.g. `https://apps.example.org/wca`): every request outside `BASE_PATH` then gets a 301 to that URL with its path appended.
+
 Under the hood: `BASE_PATH` becomes both a Vite build-time `base` (so every asset URL and in-app route is correctly prefixed) and an nginx `location` prefix (so `/wca/api/...` gets stripped back down to `/api/...` before ever reaching the API container — Express never needs to know about the prefix). Leave it blank for a normal root deployment; nothing else changes.
 
 ---
@@ -123,33 +125,23 @@ git clone <repo-url> workforce-competency
 cd workforce-competency
 pnpm install
 
-# 5. First boot WITHOUT a cert yet, just to serve the ACME challenge.
+# 5. Deploy. nginx serves HTTP first; certbot requests the certificate
+#    ~15 seconds after start, and nginx switches to HTTPS within a minute.
 pnpm run deploy
-# TLS mode: internal
-# Domain:   yourdomain.example
-# HTTP/HTTPS ports: 80 / 443
+# TLS mode:            internal
+# Domain:              yourdomain.example
+# Domain aliases:      www.yourdomain.example   (optional)
+# Let's Encrypt email: you@yourdomain.example
+# SESSION_COOKIE_SECURE: n for now (HTTP until the certificate exists)
 # → review screen → Continue
-# (nginx will fail to bind :443 with no cert yet on the very first boot of a
-#  brand-new domain — that's expected; :80 still comes up and serves
-#  /.well-known/acme-challenge/, which is all certbot needs)
 
-# 6. Issue the cert via the running :80 challenge endpoint (webroot mode):
-docker run --rm \
-  -v "$(pwd)/nginx/letsencrypt:/etc/letsencrypt" \
-  -v "$(pwd)/nginx/certbot-www:/var/www/certbot" \
-  certbot/certbot certonly --webroot -w /var/www/certbot \
-  -d yourdomain.example -d www.yourdomain.example
+docker compose logs -f certbot nginx   # watch for "[wca-config] switched to https"
 
-# 7. Restart nginx now that the cert exists:
-docker compose -f docker-compose.yml -f docker-compose.internal-tls.yml restart nginx
-
-# 8. Once you've confirmed HTTPS works end-to-end, flip the session cookie
-#    to Secure (it defaults to true from the CLI, but if you set it to
-#    false during the pre-cert bootstrap, change it back now):
-pnpm run deploy   # re-run, edit SESSION_COOKIE_SECURE from the review screen
+# 6. Once https://yourdomain.example works, make the session cookie Secure:
+pnpm run deploy   # re-run, set SESSION_COOKIE_SECURE to true from the review screen
 ```
 
-Certbot renewal: since port 80 stays bound to this app's nginx (which already serves `/.well-known/acme-challenge/`), a cron job running the same `certbot certonly --webroot ...` command periodically (e.g. via `crontab -e`) will renew in place without downtime.
+Renewal is automatic: the `certbot` service runs `certbot renew` twice a day and nginx reloads within a minute of a new certificate. Let's Encrypt no longer emails expiry warnings, so run `scripts/check-certificate.sh` from cron and alert on a non-zero exit. If issuance fails, certbot retries hourly; check `docker compose logs certbot` and that every name resolves here with port 80 reachable.
 
 ---
 
@@ -184,10 +176,10 @@ This means `Set-Cookie` never reached the browser. Cause, in order of likelihood
 1. `SESSION_COOKIE_SECURE` is `true` (correct whenever there's HTTPS in front) but Express doesn't think the connection is secure — usually because an internal proxy hop is overwriting `X-Forwarded-Proto` with its own (incorrect) scheme instead of relaying the value set by the outer, TLS-terminating proxy. Check what the `nginx` container is actually forwarding:
 
    ```bash
-   docker exec wca-nginx grep -A1 "X-Forwarded-Proto" /etc/nginx/conf.d/default.conf
+   docker exec wca-nginx grep -A3 "map " /etc/nginx/conf.d/default.conf
    ```
 
-   It should read `proxy_set_header X-Forwarded-Proto $http_x_forwarded_proto;` in `external` mode (relaying the host proxy's header) — **not** `$scheme` (which is always `http` for this internal-only hop). This exact bug shipped once and was fixed in `nginx/conf.d/templates/external-tls.conf.template`; if you're running an image built before that fix, rebuild.
+   In `external` mode it should map `$http_x_forwarded_proto` (relaying the host proxy's header, falling back to `$scheme` only when the header is missing) — **not** plain `$scheme`, which is always `http` on this internal hop. Also check that **every** proxy in front relays the header rather than setting `$scheme`: a TLS-terminating proxy sets it to `https`, and each plain-HTTP hop after it must pass `$http_x_forwarded_proto` along. The app locations live in `/etc/nginx/snippets/wca-app.conf` (rendered from `nginx/snippets/wca-app.conf.template`).
 
 2. Confirm directly against the API container, bypassing all proxies:
 

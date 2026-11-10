@@ -9,26 +9,22 @@ import { ReportKpiCards } from '../ReportKpiCards';
 const ENV = import.meta.env;
 const baseUrl = ENV.VITE_BASE_URL || '/';
 
-interface Props { departmentId: number }
+interface Props { departmentId: number; facilityId: number | null }
 
-export function DepartmentReport({ departmentId }: Props) {
+export function DepartmentReport({ departmentId, facilityId }: Props) {
   const navigate = useNavigate();
-  const { data, isPending, isError, error } = useDepartmentReport(departmentId);
+  const { data, isPending, isError, error } = useDepartmentReport(departmentId, facilityId);
 
   if (isPending) return <ChartSkeleton />;
   if (isError) return <div className="p-6 text-sm text-destructive">Error: {(error as Error).message}</div>;
 
   const covered = data.items.length;
-  const totalResp = data.items.reduce((s, r) => s + r.respondents, 0);
-  const avgLevel = totalResp > 0
-    ? data.items.reduce((s, r) => s + (r.avg_level ?? 0) * r.respondents, 0) / totalResp
-    : null;
 
   return (
     <div className="flex flex-col gap-4 p-4">
       <ReportKpiCards
         totalRespondents={data.meta.total_respondents}
-        avgLevel={avgLevel}
+        avgLevel={data.meta.avg_level}
         bucketsCovered={covered}
         bucketsLabel="respondents"
       />

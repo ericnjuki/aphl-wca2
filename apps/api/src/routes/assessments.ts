@@ -2,7 +2,7 @@ import { Router, Request, Response, NextFunction } from 'express';
 import { query, execute } from '../db/database';
 import { requireAuth, requirePasswordChanged, requireAdmin } from '../middleware/auth';
 import { createError } from '../middleware/errorHandler';
-import { parseCsv } from '../lib/csv';
+import catalogueRouter from './assessments-catalogue';
 
 interface DomainRow extends Record<string, unknown> {
   id: number;
@@ -44,6 +44,10 @@ interface FootnoteRow extends Record<string, unknown> {
 const router = Router();
 
 router.use(requireAuth, requirePasswordChanged);
+
+// ── Catalogue workbook ────────────────────────────────────────────────────────
+
+router.use('/catalogue', catalogueRouter);
 
 // ── Domains ───────────────────────────────────────────────────────────────────
 
@@ -88,46 +92,6 @@ router.post('/domains', requireAdmin, (req: Request, res: Response, next: NextFu
       [code],
     );
     res.status(201).json({ domain });
-  } catch (err) { next(err); }
-});
-
-router.post('/domains/import', requireAdmin, (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const { csv } = req.body as { csv?: string };
-    if (!csv) return next(createError('csv is required', 400));
-    const { headers, rows } = parseCsv(csv);
-    const codeIdx = headers.indexOf('assessment_code');
-    const nameIdx = headers.indexOf('assessment_name');
-    if (codeIdx === -1 || nameIdx === -1)
-      return next(createError('CSV must have assessment_code and assessment_name columns', 400));
-    const purposeIdx = headers.indexOf('purpose');
-    const introIdx = headers.indexOf('introduction');
-    let imported = 0, updated = 0, skipped = 0;
-    for (const row of rows) {
-      const code = row[codeIdx]?.toUpperCase();
-      const name = row[nameIdx];
-      if (!code || !name) { skipped++; continue; }
-      const purpose = purposeIdx === -1 ? null : (row[purposeIdx] || null);
-      const introduction = introIdx === -1 ? null : (row[introIdx] || null);
-      const [existing] = query<DomainRow>(
-        'SELECT * FROM assessment_domains WHERE code = ? COLLATE NOCASE',
-        [code],
-      );
-      if (existing) {
-        execute(
-          `UPDATE assessment_domains SET name = ?, purpose = ?, introduction = ?, updated_at = datetime('now') WHERE id = ?`,
-          [name, purpose, introduction, existing.id],
-        );
-        updated++;
-      } else {
-        execute(
-          'INSERT INTO assessment_domains (code, name, purpose, introduction) VALUES (?, ?, ?, ?)',
-          [code, name, purpose, introduction],
-        );
-        imported++;
-      }
-    }
-    res.json({ imported, updated, skipped });
   } catch (err) { next(err); }
 });
 
@@ -230,40 +194,6 @@ router.post('/domains/:id/items', requireAdmin, (req: Request, res: Response, ne
   } catch (err) { next(err); }
 });
 
-router.post('/domains/:id/items/import', requireAdmin, (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const domainId = Number(req.params.id);
-    const [domain] = query<DomainRow>(
-      'SELECT id FROM assessment_domains WHERE id = ?',
-      [domainId],
-    );
-    if (!domain) return next(createError('Domain not found', 404));
-    const { csv } = req.body as { csv?: string };
-    if (!csv) return next(createError('csv is required', 400));
-    const { headers, rows } = parseCsv(csv);
-    const required = ['competency_value', 'competency_text', 'subcompetency_value', 'subcompetency_text'];
-    const idx = (h: string) => headers.indexOf(h);
-    if (required.some((h) => idx(h) === -1))
-      return next(createError(`CSV must have columns: ${required.join(', ')}`, 400));
-    let imported = 0;
-    for (let i = 0; i < rows.length; i++) {
-      const row = rows[i];
-      const get = (h: string) => row[idx(h)] ?? '';
-      execute(
-        `INSERT INTO assessment_items
-           (domain_id, competency_value, competency_text, subcompetency_value, subcompetency_text,
-            beginner, competent, proficient, expert, na, sort_order)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
-        [domainId, get('competency_value'), get('competency_text'),
-         get('subcompetency_value'), get('subcompetency_text'),
-         get('beginner'), get('competent'), get('proficient'), get('expert'), get('na'), i],
-      );
-      imported++;
-    }
-    res.json({ imported });
-  } catch (err) { next(err); }
-});
-
 router.put('/items/:id', requireAdmin, (req: Request, res: Response, next: NextFunction) => {
   try {
     const id = Number(req.params.id);
@@ -345,93 +275,6 @@ router.post('/domains/:id/footnotes', requireAdmin, (req: Request, res: Response
       [domainId],
     );
     res.status(201).json({ footnote });
-  } catch (err) { next(err); }
-});
-
-// Replace-all import: clears the domain's footnotes, then inserts the CSV rows.
-// Makes re-importing idempotent. CSV columns: symbol, definition, sort_order.
-router.post('/domains/:id/footnotes/import', requireAdmin, (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const domainId = Number(req.params.id);
-    const [domain] = query<DomainRow>('SELECT id FROM assessment_domains WHERE id = ?', [domainId]);
-    if (!domain) return next(createError('Domain not found', 404));
-    const { csv } = req.body as { csv?: string };
-    if (!csv) return next(createError('csv is required', 400));
-    const { headers, rows } = parseCsv(csv);
-    const symIdx = headers.indexOf('symbol');
-    const defIdx = headers.indexOf('definition');
-    const sortIdx = headers.indexOf('sort_order');
-    if (symIdx === -1 || defIdx === -1)
-      return next(createError('CSV must have columns: symbol, definition', 400));
-    execute('DELETE FROM assessment_footnotes WHERE domain_id = ?', [domainId]);
-    let imported = 0, skipped = 0;
-    for (let i = 0; i < rows.length; i++) {
-      const symbol = rows[i][symIdx];
-      const definition = rows[i][defIdx];
-      if (!symbol || !definition) { skipped++; continue; }
-      const rawSort = sortIdx === -1 ? "" : rows[i][sortIdx];
-      const parsedSort = rawSort === "" || rawSort === undefined ? i : Number(rawSort);
-      const finalSort = Number.isNaN(parsedSort) ? i : parsedSort;
-      execute(
-        'INSERT INTO assessment_footnotes (domain_id, symbol, definition, sort_order) VALUES (?, ?, ?, ?)',
-        [domainId, symbol, definition, finalSort],
-      );
-      imported++;
-    }
-    res.json({ imported, skipped });
-  } catch (err) { next(err); }
-});
-
-// Batch footnote import across domains, keyed by `domain_code`. For each domain
-// code present in the CSV, replaces that domain's footnotes with the file's rows
-// for that code. Unknown codes are reported, not fatal. CSV columns:
-// domain_code, symbol, definition, sort_order.
-router.post('/footnotes/import', requireAdmin, (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const { csv } = req.body as { csv?: string };
-    if (!csv) return next(createError('csv is required', 400));
-    const { headers, rows } = parseCsv(csv);
-    const codeIdx = headers.indexOf('domain_code');
-    const symIdx = headers.indexOf('symbol');
-    const defIdx = headers.indexOf('definition');
-    const sortIdx = headers.indexOf('sort_order');
-    if (codeIdx === -1 || symIdx === -1 || defIdx === -1)
-      return next(createError('CSV must have columns: domain_code, symbol, definition', 400));
-
-    // Group rows by domain code so each domain is replaced as a unit.
-    const byCode = new Map<string, { symbol: string; definition: string; sort: number }[]>();
-    for (let i = 0; i < rows.length; i++) {
-      const code = rows[i][codeIdx]?.toUpperCase();
-      const symbol = rows[i][symIdx];
-      const definition = rows[i][defIdx];
-      if (!code || !symbol || !definition) continue;
-      const rawSort = sortIdx === -1 ? '' : rows[i][sortIdx];
-      const parsedSort = rawSort === '' || rawSort === undefined ? i : Number(rawSort);
-      const sort = Number.isNaN(parsedSort) ? i : parsedSort;
-      const list = byCode.get(code) ?? [];
-      list.push({ symbol, definition, sort });
-      byCode.set(code, list);
-    }
-
-    let imported = 0, domainsUpdated = 0;
-    const unknownCodes: string[] = [];
-    for (const [code, fns] of byCode) {
-      const [domain] = query<DomainRow>(
-        'SELECT id FROM assessment_domains WHERE code = ? COLLATE NOCASE',
-        [code],
-      );
-      if (!domain) { unknownCodes.push(code); continue; }
-      execute('DELETE FROM assessment_footnotes WHERE domain_id = ?', [domain.id]);
-      for (const f of fns) {
-        execute(
-          'INSERT INTO assessment_footnotes (domain_id, symbol, definition, sort_order) VALUES (?, ?, ?, ?)',
-          [domain.id, f.symbol, f.definition, f.sort],
-        );
-        imported++;
-      }
-      domainsUpdated++;
-    }
-    res.json({ imported, domainsUpdated, unknownCodes });
   } catch (err) { next(err); }
 });
 
