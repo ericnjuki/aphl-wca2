@@ -1,6 +1,6 @@
 # Merge APHL upstream (`origin/main`) and port our hosting fixes onto its new nginx layout
 
-**Status:** in-progress
+**Status:** done (2026-11-10; UAT + prod on `f7580df`)
 
 Docs migration done first: `plans/archive/2026-11-10-docs-migration.md`.
 
