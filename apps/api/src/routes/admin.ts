@@ -1,15 +1,19 @@
 import { Router, Request, Response, NextFunction } from 'express';
-import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
 import { SqlValue } from 'sql.js';
 import { query, execute, transaction } from '../db/database';
 import { requireAuth, requirePasswordChanged, requireAdmin } from '../middleware/auth';
 import { createError } from '../middleware/errorHandler';
+import districtsRouter from './admin-districts';
+import { resolveDistrict, backfillResponseDistrict, withRegions } from '../lib/org';
+import { generateTempPassword, generateUsername } from '../lib/credentials';
+import setupRouter from './admin-setup';
+import { assertNoHistory, type HistoryTable } from '../lib/history';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 interface RegionRow    extends Record<string, unknown> { id: number; code: string; name: string; }
-interface FacilityRow  extends Record<string, unknown> { id: number; code: string; name: string; facility_type: string | null; region_id: number | null; }
+interface FacilityRow  extends Record<string, unknown> { id: number; code: string; name: string; facility_type: string | null; region_id: number | null; district_id: number | null; }
 interface DeptRow      extends Record<string, unknown> { id: number; code: string; name: string; }
 interface OrgRoleRow   extends Record<string, unknown> { id: number; code: string; name: string; }
 interface TitleRow     extends Record<string, unknown> { id: number; code: string; name: string; }
@@ -25,47 +29,33 @@ interface UserRow      extends Record<string, unknown> {
 const router = Router();
 router.use(requireAuth, requirePasswordChanged);
 
-// ── CSV helpers ───────────────────────────────────────────────────────────────
+// ── Archived rows ─────────────────────────────────────────────────────────────
+// Lists (and so every picker) show active rows; ?include_archived=1 adds the
+// archived ones for the Setup tables' "Show archived" toggle.
 
-function parseCsv(text: string): { headers: string[]; rows: string[][] } {
-  const lines = text.trim().split('\n').map((l) => l.trim()).filter(Boolean);
-  if (lines.length < 2) return { headers: [], rows: [] };
-  const headers = lines[0].replace(/^\uFEFF/, '').split(',').map((h) => h.trim());
-  const rows = lines.slice(1).map((l) => l.split(',').map((v) => v.trim()));
-  return { headers, rows };
-}
-
-function generateTempPassword(): string {
-  return crypto.randomBytes(8).toString('base64url').slice(0, 10);
-}
-
-function generateUsername(firstName: string, lastName: string): string {
-  const base = `${firstName.toLowerCase()}.${lastName.toLowerCase()}`.replace(/[^a-z0-9.]/g, '');
-  const existing = query<{ user_name: string }>('SELECT user_name FROM users WHERE user_name LIKE ?', [`${base}%`]);
-  if (!existing.length) return base;
-  let suffix = 2;
-  while (existing.some((r) => r.user_name === `${base}_${suffix}`)) suffix++;
-  return `${base}_${suffix}`;
-}
+const includeArchived = (req: Request) =>
+  req.query.include_archived === '1' || req.query.include_archived === 'true';
 
 // ── Generic CRUD factory ──────────────────────────────────────────────────────
 // Keeps the reference-data routes DRY.  Each table only needs a small config.
 
 interface CrudConfig {
-  table: string;
+  table: HistoryTable;
   fields: string[];          // updatable fields (code always included)
   uniqueConflictField?: string; // field name to show in 409 message
+  beforeDelete?: (id: number) => string | null; // non-null → 409 with that message
 }
 
 function makeCrudRouter(cfg: CrudConfig) {
   const r = Router();
-  const { table, fields } = cfg;
+  const { table, fields, beforeDelete } = cfg;
   const allFields = [...new Set(['code', 'name', ...fields])];
 
-  // LIST
-  r.get('/', (_req, res: Response, next: NextFunction) => {
+  // LIST — active rows unless ?include_archived=1
+  r.get('/', (req: Request, res: Response, next: NextFunction) => {
     try {
-      res.json({ [table]: query(`SELECT * FROM ${table} ORDER BY name ASC`) });
+      const where = includeArchived(req) ? '' : 'WHERE archived_at IS NULL';
+      res.json({ [table]: query(`SELECT * FROM ${table} ${where} ORDER BY name ASC`) });
     } catch (err) { next(err); }
   });
 
@@ -121,6 +111,9 @@ function makeCrudRouter(cfg: CrudConfig) {
       const id = Number(req.params.id);
       const [existing] = query(`SELECT id FROM ${table} WHERE id = ?`, [id]);
       if (!existing) return next(createError('Not found', 404));
+      assertNoHistory(table, id);
+      const blocked = beforeDelete?.(id);
+      if (blocked) return next(createError(blocked, 409));
       execute(`DELETE FROM ${table} WHERE id = ?`, [id]);
       res.json({ message: 'Deleted' });
     } catch (err) { next(err); }
@@ -131,66 +124,40 @@ function makeCrudRouter(cfg: CrudConfig) {
 
 // ── Regions ───────────────────────────────────────────────────────────────────
 
-const regionsRouter = makeCrudRouter({ table: 'regions', fields: ['code', 'name'] });
-
-regionsRouter.post('/import', requireAdmin, (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const { csv } = req.body as { csv?: string };
-    if (!csv) return next(createError('csv is required', 400));
-    const { headers, rows } = parseCsv(csv);
-    const ci = (h: string) => headers.indexOf(h);
-    if (ci('region_code') === -1 || ci('region_name') === -1)
-      return next(createError('CSV must have region_code and region_name columns', 400));
-    let imported = 0, skipped = 0;
-    for (const row of rows) {
-      const code = row[ci('region_code')]?.toUpperCase();
-      const name = row[ci('region_name')];
-      if (!code || !name) { skipped++; continue; }
-      try { execute('INSERT INTO regions (code, name) VALUES (?, ?)', [code, name]); imported++; }
-      catch { skipped++; }
-    }
-    res.json({ imported, skipped });
-  } catch (err) { next(err); }
+const regionsRouter = makeCrudRouter({
+  table: 'regions',
+  fields: ['code', 'name'],
+  // Invariant 4 — FKs aren't enforced, so check here. Partner users count too.
+  beforeDelete: (id) => {
+    const [{ n }] = query<{ n: number }>('SELECT COUNT(*) AS n FROM districts WHERE region_id = ?', [id]);
+    if (n > 0) return `${n} ${n === 1 ? 'district is' : 'districts are'} still assigned to this region`;
+    const [{ m }] = query<{ m: number }>('SELECT COUNT(*) AS m FROM user_regions WHERE region_id = ?', [id]);
+    return m > 0 ? `${m} partner ${m === 1 ? 'user is' : 'users are'} still assigned to this region` : null;
+  },
 });
 
 // ── Departments ───────────────────────────────────────────────────────────────
 
 const departmentsRouter = makeCrudRouter({ table: 'departments', fields: ['code', 'name'] });
 
-departmentsRouter.post('/import', requireAdmin, (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const { csv } = req.body as { csv?: string };
-    if (!csv) return next(createError('csv is required', 400));
-    const { headers, rows } = parseCsv(csv);
-    const ci = (h: string) => headers.indexOf(h);
-    if (ci('department_code') === -1 || ci('department_name') === -1)
-      return next(createError('CSV must have department_code and department_name columns', 400));
-    let imported = 0, skipped = 0;
-    for (const row of rows) {
-      const code = row[ci('department_code')]?.toUpperCase();
-      const name = row[ci('department_name')];
-      if (!code || !name) { skipped++; continue; }
-      try { execute('INSERT INTO departments (code, name) VALUES (?, ?)', [code, name]); imported++; }
-      catch { skipped++; }
-    }
-    res.json({ imported, skipped });
-  } catch (err) { next(err); }
-});
-
 // ── Facilities ────────────────────────────────────────────────────────────────
 
 const facilitiesRouter = Router();
 facilitiesRouter.use(requireAuth, requirePasswordChanged);
 
-facilitiesRouter.get('/', (_req, res: Response, next: NextFunction) => {
+facilitiesRouter.get('/', (req: Request, res: Response, next: NextFunction) => {
   try {
-    const facilities = query<FacilityRow & { region_name: string | null; department_ids: string | null }>(`
+    const where = includeArchived(req) ? '' : 'WHERE f.archived_at IS NULL';
+    const facilities = query<FacilityRow & { region_name: string | null; district_name: string | null; department_ids: string | null }>(`
       SELECT f.*,
              r.name AS region_name,
+             d.name AS district_name,
              GROUP_CONCAT(fd.department_id) AS department_ids
       FROM facilities f
-      LEFT JOIN regions r ON r.id = f.region_id
+      LEFT JOIN regions r   ON r.id = f.region_id
+      LEFT JOIN districts d ON d.id = f.district_id
       LEFT JOIN facility_departments fd ON fd.facility_id = f.id
+      ${where}
       GROUP BY f.id
       ORDER BY f.name ASC
     `);
@@ -215,13 +182,16 @@ facilitiesRouter.get('/:id', (req: Request, res: Response, next: NextFunction) =
 
 facilitiesRouter.post('/', requireAdmin, (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { code, name, facility_type, region_id, department_ids = [] } = req.body as {
-      code?: string; name?: string; facility_type?: string; region_id?: number; department_ids?: number[];
+    const { code, name, facility_type, district_id, department_ids = [] } = req.body as {
+      code?: string; name?: string; facility_type?: string; district_id?: unknown; department_ids?: number[];
     };
     if (!code || !name) return next(createError('code and name are required', 400));
+    // Region is derived from the district (invariant 1); any region_id in the body is ignored.
+    const district = resolveDistrict(district_id);
+    if (!district) return next(createError('district_id is required and must reference an existing district', 400));
     try {
-      execute('INSERT INTO facilities (code, name, facility_type, region_id) VALUES (?, ?, ?, ?)',
-        [code.toUpperCase(), name, facility_type ?? null, region_id ?? null]);
+      execute('INSERT INTO facilities (code, name, facility_type, region_id, district_id) VALUES (?, ?, ?, ?, ?)',
+        [code.toUpperCase(), name, facility_type ?? null, district.region_id, district.id]);
     } catch (e: unknown) {
       if (e instanceof Error && e.message.includes('UNIQUE'))
         return next(createError(`Facility code "${code.toUpperCase()}" already exists`, 409));
@@ -241,14 +211,18 @@ facilitiesRouter.put('/:id', requireAdmin, (req: Request, res: Response, next: N
     const id = Number(req.params.id);
     const [existing] = query<FacilityRow>('SELECT * FROM facilities WHERE id = ?', [id]);
     if (!existing) return next(createError('Facility not found', 404));
-    const {
-      code = existing.code, name = existing.name,
-      facility_type = existing.facility_type, region_id = existing.region_id,
-      department_ids,
-    } = req.body as { code?: string; name?: string; facility_type?: string | null; region_id?: number | null; department_ids?: number[]; };
+    const body = req.body as {
+      code?: string; name?: string; facility_type?: string | null; district_id?: unknown; department_ids?: number[];
+    };
+    const code = body.code ?? existing.code;
+    const name = body.name ?? existing.name;
+    const facility_type = body.facility_type === undefined ? existing.facility_type : body.facility_type;
+    const department_ids = body.department_ids;
+    const district = resolveDistrict(body.district_id ?? existing.district_id);
+    if (!district) return next(createError('district_id is required and must reference an existing district', 400));
     try {
-      execute(`UPDATE facilities SET code=?, name=?, facility_type=?, region_id=?, updated_at=datetime('now') WHERE id=?`,
-        [code.toUpperCase(), name, facility_type ?? null, region_id ?? null, id]);
+      execute(`UPDATE facilities SET code=?, name=?, facility_type=?, region_id=?, district_id=?, updated_at=datetime('now') WHERE id=?`,
+        [code.toUpperCase(), name, facility_type ?? null, district.region_id, district.id, id]);
     } catch (e: unknown) {
       if (e instanceof Error && e.message.includes('UNIQUE'))
         return next(createError(`Facility code "${code.toUpperCase()}" already exists`, 409));
@@ -259,6 +233,7 @@ facilitiesRouter.put('/:id', requireAdmin, (req: Request, res: Response, next: N
       for (const deptId of department_ids)
         execute('INSERT INTO facility_departments (facility_id, department_id) VALUES (?, ?)', [id, deptId]);
     }
+    backfillResponseDistrict(id, district.id);
     const currentDepts = query<{ department_id: number }>('SELECT department_id FROM facility_departments WHERE facility_id = ?', [id]);
     const [updated] = query<FacilityRow>('SELECT * FROM facilities WHERE id = ?', [id]);
     res.json({ facility: { ...updated, department_ids: currentDepts.map((d) => d.department_id) } });
@@ -270,35 +245,9 @@ facilitiesRouter.delete('/:id', requireAdmin, (req: Request, res: Response, next
     const id = Number(req.params.id);
     const [existing] = query<FacilityRow>('SELECT id FROM facilities WHERE id = ?', [id]);
     if (!existing) return next(createError('Facility not found', 404));
+    assertNoHistory('facilities', id);
     execute('DELETE FROM facilities WHERE id = ?', [id]);
     res.json({ message: 'Deleted' });
-  } catch (err) { next(err); }
-});
-
-facilitiesRouter.post('/import', requireAdmin, (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const { csv } = req.body as { csv?: string };
-    if (!csv) return next(createError('csv is required', 400));
-    const { headers, rows } = parseCsv(csv);
-    const ci = (h: string) => headers.indexOf(h);
-    if (ci('facility_code') === -1 || ci('facility_name') === -1)
-      return next(createError('CSV must have facility_code and facility_name columns', 400));
-    let imported = 0, skipped = 0;
-    for (const row of rows) {
-      const code = row[ci('facility_code')]?.toUpperCase();
-      const name = row[ci('facility_name')];
-      if (!code || !name) { skipped++; continue; }
-      const facilityType = ci('facility_type') >= 0 ? row[ci('facility_type')] || null : null;
-      const regionCode = ci('region_code') >= 0 ? row[ci('region_code')] || null : null;
-      let regionId: number | null = null;
-      if (regionCode) {
-        const [reg] = query<{ id: number }>('SELECT id FROM regions WHERE code = ? COLLATE NOCASE', [regionCode]);
-        regionId = reg?.id ?? null;
-      }
-      try { execute('INSERT INTO facilities (code, name, facility_type, region_id) VALUES (?, ?, ?, ?)', [code, name, facilityType, regionId]); imported++; }
-      catch { skipped++; }
-    }
-    res.json({ imported, skipped });
   } catch (err) { next(err); }
 });
 
@@ -306,49 +255,9 @@ facilitiesRouter.post('/import', requireAdmin, (req: Request, res: Response, nex
 
 const orgRolesRouter = makeCrudRouter({ table: 'org_roles', fields: ['code', 'name'] });
 
-orgRolesRouter.post('/import', requireAdmin, (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const { csv } = req.body as { csv?: string };
-    if (!csv) return next(createError('csv is required', 400));
-    const { headers, rows } = parseCsv(csv);
-    const ci = (h: string) => headers.indexOf(h);
-    if (ci('role_code') === -1 || ci('role_name') === -1)
-      return next(createError('CSV must have role_code and role_name columns', 400));
-    let imported = 0, skipped = 0;
-    for (const row of rows) {
-      const code = row[ci('role_code')]?.toUpperCase();
-      const name = row[ci('role_name')];
-      if (!code || !name) { skipped++; continue; }
-      try { execute('INSERT INTO org_roles (code, name) VALUES (?, ?)', [code, name]); imported++; }
-      catch { skipped++; }
-    }
-    res.json({ imported, skipped });
-  } catch (err) { next(err); }
-});
-
 // ── User titles ───────────────────────────────────────────────────────────────
 
 const userTitlesRouter = makeCrudRouter({ table: 'user_titles', fields: ['code', 'name'] });
-
-userTitlesRouter.post('/import', requireAdmin, (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const { csv } = req.body as { csv?: string };
-    if (!csv) return next(createError('csv is required', 400));
-    const { headers, rows } = parseCsv(csv);
-    const ci = (h: string) => headers.indexOf(h);
-    if (ci('title_code') === -1 || ci('title_name') === -1)
-      return next(createError('CSV must have title_code and title_name columns', 400));
-    let imported = 0, skipped = 0;
-    for (const row of rows) {
-      const code = row[ci('title_code')]?.toUpperCase();
-      const name = row[ci('title_name')];
-      if (!code || !name) { skipped++; continue; }
-      try { execute('INSERT INTO user_titles (code, name) VALUES (?, ?)', [code, name]); imported++; }
-      catch { skipped++; }
-    }
-    res.json({ imported, skipped });
-  } catch (err) { next(err); }
-});
 
 // ── Users ─────────────────────────────────────────────────────────────────────
 
@@ -370,7 +279,42 @@ const USER_SELECT = `
 
 function sanitiseUser(u: UserRow & Record<string, unknown>) {
   const { password: _, ...safe } = u;
-  return { ...safe, is_first_login: Boolean(u.is_first_login), is_enabled: Boolean(u.is_enabled) };
+  return withRegions({ ...safe, id: u.id, is_first_login: Boolean(u.is_first_login), is_enabled: Boolean(u.is_enabled) });
+}
+
+// ── Partner (monitor) placement ───────────────────────────────────────────────
+// Monitors have no facility placement; they see reports for the regions in
+// user_regions. Only monitors may have rows there (FKs aren't enforced).
+
+type Placement = { facility_id: unknown; department_id: unknown; org_role_id: unknown; title_id: unknown };
+
+const USER_ROLES = ['staff', 'admin', 'monitor'];
+const ROLE_ERROR = 'role must be one of: staff, admin, monitor';
+
+function validatePlacement(
+  role: string, placement: Placement, rawRegionIds: unknown,
+): { regionIds: number[] } | { error: string } {
+  const ids = rawRegionIds ?? [];
+  if (!Array.isArray(ids) || !ids.every((v) => Number.isInteger(v)))
+    return { error: 'region_ids must be an array of region ids' };
+  if (role !== 'monitor')
+    return ids.length > 0 ? { error: 'Only partner (monitor) users can be assigned regions' } : { regionIds: [] };
+  if (Object.values(placement).some((v) => v != null))
+    return { error: 'Partner (monitor) users cannot have a facility, department, org role or title' };
+  const unique = [...new Set(ids as number[])];
+  if (unique.length === 0) return { error: 'Partner (monitor) users need at least one region' };
+  const found = query<{ id: number }>(
+    `SELECT id FROM regions WHERE id IN (${unique.map(() => '?').join(',')})`, unique,
+  );
+  if (found.length !== unique.length) return { error: 'Unknown region in region_ids' };
+  return { regionIds: unique };
+}
+
+function setUserRegions(userId: number, regionIds: number[]): void {
+  execute('DELETE FROM user_regions WHERE user_id = ?', [userId]);
+  for (const rid of regionIds) {
+    execute('INSERT INTO user_regions (user_id, region_id) VALUES (?, ?)', [userId, rid]);
+  }
 }
 
 usersRouter.get('/', requireAdmin, (_req, res: Response, next: NextFunction) => {
@@ -386,17 +330,26 @@ usersRouter.post('/', requireAdmin, async (req: Request, res: Response, next: Ne
             facility_id, department_id, org_role_id, title_id, role = 'staff' } = req.body as Partial<UserRow>;
     if (!first_name || !last_name || !national_id || !id_type || !email)
       return next(createError('first_name, last_name, national_id, id_type, email are required', 400));
+    if (!USER_ROLES.includes(role)) return next(createError(ROLE_ERROR, 400));
+    const placement = validatePlacement(
+      role, { facility_id, department_id, org_role_id, title_id }, (req.body as { region_ids?: unknown }).region_ids,
+    );
+    if ('error' in placement) return next(createError(placement.error, 400));
     const user_name = generateUsername(first_name, last_name);
     const temp = generateTempPassword();
     const hashed = await bcrypt.hash(temp, 12);
     try {
-      execute(
-        `INSERT INTO users (first_name, last_name, national_id, id_type, email, user_name, password,
-           role, facility_id, department_id, org_role_id, title_id, temp_password)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-        [first_name, last_name, national_id, id_type, email, user_name, hashed,
-         role, facility_id ?? null, department_id ?? null, org_role_id ?? null, title_id ?? null, temp],
-      );
+      transaction(() => {
+        execute(
+          `INSERT INTO users (first_name, last_name, national_id, id_type, email, user_name, password,
+             role, facility_id, department_id, org_role_id, title_id, temp_password)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+          [first_name, last_name, national_id, id_type, email, user_name, hashed,
+           role, facility_id ?? null, department_id ?? null, org_role_id ?? null, title_id ?? null, temp],
+        );
+        const [created] = query<{ id: number }>('SELECT id FROM users WHERE email = ?', [email]);
+        setUserRegions(created.id, placement.regionIds);
+      });
     } catch (e: unknown) {
       if (e instanceof Error && e.message.includes('UNIQUE'))
         return next(createError('A user with that email, national ID, or username already exists', 409));
@@ -419,15 +372,27 @@ usersRouter.put('/:id', requireAdmin, (req: Request, res: Response, next: NextFu
       org_role_id = existing.org_role_id, title_id = existing.title_id,
       is_enabled = existing.is_enabled,
     } = req.body as Partial<UserRow>;
+    // Omitted region_ids keep the current assignment while the user stays a monitor.
+    const sentRegionIds = (req.body as { region_ids?: unknown }).region_ids;
+    const regionInput = sentRegionIds !== undefined ? sentRegionIds
+      : role === 'monitor'
+        ? query<{ region_id: number }>('SELECT region_id FROM user_regions WHERE user_id = ?', [id]).map((r) => r.region_id)
+        : [];
+    if (!USER_ROLES.includes(role)) return next(createError(ROLE_ERROR, 400));
+    const placement = validatePlacement(role, { facility_id, department_id, org_role_id, title_id }, regionInput);
+    if ('error' in placement) return next(createError(placement.error, 400));
     try {
-      execute(
-        `UPDATE users SET first_name=?, last_name=?, email=?, role=?,
-           facility_id=?, department_id=?, org_role_id=?, title_id=?, is_enabled=?,
-           updated_at=datetime('now') WHERE id=?`,
-        [first_name, last_name, email, role,
-         facility_id ?? null, department_id ?? null, org_role_id ?? null, title_id ?? null,
-         is_enabled ? 1 : 0, id],
-      );
+      transaction(() => {
+        execute(
+          `UPDATE users SET first_name=?, last_name=?, email=?, role=?,
+             facility_id=?, department_id=?, org_role_id=?, title_id=?, is_enabled=?,
+             updated_at=datetime('now') WHERE id=?`,
+          [first_name, last_name, email, role,
+           facility_id ?? null, department_id ?? null, org_role_id ?? null, title_id ?? null,
+           is_enabled ? 1 : 0, id],
+        );
+        setUserRegions(id, placement.regionIds);
+      });
     } catch (e: unknown) {
       if (e instanceof Error && e.message.includes('UNIQUE'))
         return next(createError('That email is already in use', 409));
@@ -453,143 +418,16 @@ usersRouter.post('/:id/reset-password', requireAdmin, async (req: Request, res: 
   } catch (err) { next(err); }
 });
 
-// ── Personnel bulk import ─────────────────────────────────────────────────────
-// CSV: first_name,last_name,national_id,id_type,email,facility_code,department_code,role_code,title_code
-// Validates ALL rows before writing (fail + rollback on any error).
-
-usersRouter.post('/import', requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const { csv } = req.body as { csv?: string };
-    if (!csv) return next(createError('csv is required', 400));
-    const { headers, rows } = parseCsv(csv);
-    const ci = (h: string) => headers.indexOf(h);
-    const required = ['first_name', 'last_name', 'national_id', 'id_type', 'email'];
-    const missingHeaders = required.filter((h) => ci(h) === -1);
-    if (missingHeaders.length)
-      return next(createError(`CSV missing required columns: ${missingHeaders.join(', ')}`, 400));
-
-    interface PreparedUser {
-      first_name: string; last_name: string; national_id: string; id_type: string;
-      email: string; user_name: string; hashed: string; temp: string;
-      role: string; facility_id: number | null; department_id: number | null;
-      org_role_id: number | null; title_id: number | null;
-    }
-
-    const errors: { row: number; message: string }[] = [];
-    const prepared: PreparedUser[] = [];
-    let skipped = 0;
-    const seenEmails = new Set<string>();
-    const seenIds = new Set<string>();
-    const seenUsernames = new Set<string>();
-
-    for (let i = 0; i < rows.length; i++) {
-      const rowNum = i + 2; // 1-based + header
-      const get = (h: string) => (ci(h) >= 0 ? rows[i][ci(h)]?.trim() ?? '' : '');
-
-      const first_name = get('first_name');
-      const last_name  = get('last_name');
-      const national_id = get('national_id');
-      const id_type    = get('id_type');
-      const email      = get('email').toLowerCase();
-
-      if (!first_name || !last_name || !national_id || !id_type || !email) {
-        errors.push({ row: rowNum, message: 'Missing required field (first_name, last_name, national_id, id_type, email)' });
-        continue;
-      }
-
-      // Intra-CSV duplicates — skip silently
-      if (seenEmails.has(email) || seenIds.has(`${national_id}:${id_type}`)) { skipped++; continue; }
-      seenEmails.add(email);
-      seenIds.add(`${national_id}:${id_type}`);
-
-      // DB duplicates — skip silently (idempotent re-upload)
-      if (query('SELECT id FROM users WHERE email = ?', [email]).length ||
-          query('SELECT id FROM users WHERE national_id = ? AND id_type = ?', [national_id, id_type]).length)
-        { skipped++; continue; }
-
-      // Reference lookups (optional fields)
-      let facility_id: number | null = null;
-      const facilityCode = get('facility_code');
-      if (facilityCode) {
-        const [f] = query<{ id: number }>('SELECT id FROM facilities WHERE code = ? COLLATE NOCASE', [facilityCode]);
-        if (!f) { errors.push({ row: rowNum, message: `facility_code not found: ${facilityCode}` }); continue; }
-        facility_id = f.id;
-      }
-
-      let department_id: number | null = null;
-      const deptCode = get('department_code');
-      if (deptCode) {
-        const [d] = query<{ id: number }>('SELECT id FROM departments WHERE code = ? COLLATE NOCASE', [deptCode]);
-        if (!d) { errors.push({ row: rowNum, message: `department_code not found: ${deptCode}` }); continue; }
-        department_id = d.id;
-      }
-
-      let org_role_id: number | null = null;
-      const roleCode = get('role_code');
-      if (roleCode) {
-        const [r] = query<{ id: number }>('SELECT id FROM org_roles WHERE code = ? COLLATE NOCASE', [roleCode]);
-        if (!r) { errors.push({ row: rowNum, message: `role_code not found: ${roleCode}` }); continue; }
-        org_role_id = r.id;
-      }
-
-      let title_id: number | null = null;
-      const titleCode = get('title_code');
-      if (titleCode) {
-        const [t] = query<{ id: number }>('SELECT id FROM user_titles WHERE code = ? COLLATE NOCASE', [titleCode]);
-        if (!t) { errors.push({ row: rowNum, message: `title_code not found: ${titleCode}` }); continue; }
-        title_id = t.id;
-      }
-
-      // Generate username (account for others being generated in this batch)
-      let user_name = `${first_name.toLowerCase()}.${last_name.toLowerCase()}`.replace(/[^a-z0-9.]/g, '');
-      if (seenUsernames.has(user_name) || query('SELECT id FROM users WHERE user_name = ?', [user_name]).length) {
-        let suffix = 2;
-        while (seenUsernames.has(`${user_name}_${suffix}`) || query('SELECT id FROM users WHERE user_name = ?', [`${user_name}_${suffix}`]).length)
-          suffix++;
-        user_name = `${user_name}_${suffix}`;
-      }
-      seenUsernames.add(user_name);
-
-      const temp = generateTempPassword();
-      const hashed = await bcrypt.hash(temp, 12);
-      prepared.push({ first_name, last_name, national_id, id_type, email, user_name, hashed, temp,
-                      role: 'staff', facility_id, department_id, org_role_id, title_id });
-    }
-
-    // Fail if any row had errors — do not write anything
-    if (errors.length) {
-      res.status(422).json({ error: `Import failed with ${errors.length} error(s)`, errors });
-      return;
-    }
-
-    // All valid — write in a transaction
-    const credentials = transaction(() => {
-      const creds: { user_name: string; temp_password: string }[] = [];
-      for (const u of prepared) {
-        execute(
-          `INSERT INTO users (first_name, last_name, national_id, id_type, email, user_name, password,
-             role, facility_id, department_id, org_role_id, title_id, temp_password)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-          [u.first_name, u.last_name, u.national_id, u.id_type, u.email, u.user_name, u.hashed,
-           u.role, u.facility_id, u.department_id, u.org_role_id, u.title_id, u.temp],
-        );
-        creds.push({ user_name: u.user_name, temp_password: u.temp });
-      }
-      return creds;
-    });
-
-    res.status(201).json({ imported: prepared.length, skipped, credentials });
-  } catch (err) { next(err); }
-});
-
 // ── Mount sub-routers ─────────────────────────────────────────────────────────
 
 router.use('/regions',     regionsRouter);
+router.use('/districts',   districtsRouter);
 router.use('/departments', departmentsRouter);
 router.use('/facilities',  facilitiesRouter);
 router.use('/org-roles',   orgRolesRouter);
 router.use('/user-titles', userTitlesRouter);
 router.use('/users',       usersRouter);
+router.use('/setup',       setupRouter);
 
 // ── Reviews (admin-only approval queue for completed submissions) ────────────
 

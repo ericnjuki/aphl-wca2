@@ -1,8 +1,15 @@
-# Overlay for TLS_MODE=external — TLS is terminated by a reverse proxy that
-# already exists on the host (e.g. the box's system nginx). This container
-# only ever serves plain HTTP on one port. Use with:
-#   docker compose -f docker-compose.yml -f docker-compose.external.yml up -d
+# Overlay for TLS_MODE=external: TLS is terminated by a reverse proxy in front
+# of this container (e.g. the host's own nginx). The container serves plain
+# HTTP on one host port, and the certbot service is not started. Use with:
+#   docker compose -f docker-compose.yml -f docker-compose.external.yml up -d --build
+# `!override` replaces the base file's 80/443 bindings (Compose >= 2.24).
 services:
   nginx:
-    ports:
+    environment:
+      TLS_MODE: external
+    ports: !override
       - "${APP_PORT:-8888}:80"
+
+  certbot:
+    # Only started when this profile is asked for explicitly.
+    profiles: ["certbot"]

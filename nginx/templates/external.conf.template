@@ -1,0 +1,26 @@
+# External-TLS site: used when TLS_MODE=external. TLS is terminated by a
+# reverse proxy in front of this container (e.g. the host's own nginx), so this
+# server only speaks plain HTTP on port 80 and never asks certbot for anything.
+# Rendered to /etc/nginx/conf.d/default.conf by 40-wca-config.sh.
+
+upstream api_upstream {
+    server api:3000;
+    keepalive 16;
+}
+
+# Relay the scheme the original client used, as reported by the proxy in
+# front. $scheme would always be "http" on this hop, which makes Express
+# (trust proxy) treat every request as insecure and silently drop the
+# `secure` session cookie. Falls back to $scheme when no proxy sets it.
+map $http_x_forwarded_proto $wca_forwarded_proto {
+    ""      $scheme;
+    default $http_x_forwarded_proto;
+}
+
+server {
+    listen 80 default_server;
+    listen [::]:80 default_server;
+    server_name _;
+
+    include /etc/nginx/snippets/wca-app.conf;
+}

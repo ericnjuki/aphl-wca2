@@ -11,7 +11,7 @@ async function start(): Promise<void> {
   const db = await getDb();
   await runMigrations(db);
   await runSeed(db);
-  seedAssessments();
+  await seedAssessments();
   backfillResponses();
   persistDb();
 

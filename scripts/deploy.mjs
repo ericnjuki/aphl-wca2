@@ -69,7 +69,7 @@ async function writeEnv(values) {
 // Each field knows how to prompt for itself and how to render its current
 // value in the review summary. `visible` controls which fields apply given
 // the current TLS mode. `tlsMode` is one of three CLI-facing choices:
-//   'internal' — this container terminates TLS itself via certbot
+//   'internal' — this stack terminates TLS itself (certbot service, ports 80/443)
 //   'external' — plain HTTP here, fronted by an existing HTTPS proxy on the host
 //   'none'     — plain HTTP only, no TLS anywhere, no domain needed
 // 'external' and 'none' both map to the same TLS_MODE=external infra (same
@@ -89,7 +89,7 @@ function maskSecret(secret) {
 }
 
 const TLS_MODE_LABELS = {
-  internal: 'internal — this container terminates TLS itself (certbot)',
+  internal: "internal — this stack terminates TLS itself (Let's Encrypt, ports 80/443)",
   external: 'external — plain HTTP here, fronted by an existing HTTPS proxy',
   none: 'none — plain HTTP only, no TLS anywhere, no domain needed',
 };
@@ -151,18 +151,44 @@ const fieldDefs = [
     },
   },
   {
-    key: 'httpPort',
-    label: 'HTTP port',
+    key: 'domainAliases',
+    label: 'Domain aliases',
     visible: (s) => s.tlsMode === 'internal',
-    display: (s) => s.httpPort,
-    ask: async (s) => input({ message: 'HTTP port to bind on this host', default: String(s.httpPort ?? 80), validate: portValidate }),
+    display: (s) => s.domainAliases || c.dim('(none)'),
+    ask: async (s) =>
+      (
+        await input({
+          message: 'Extra host names on the same certificate, space-separated (e.g. www.wca.example.org) — blank for none',
+          default: s.domainAliases || undefined,
+        })
+      ).trim(),
   },
   {
-    key: 'httpsPort',
-    label: 'HTTPS port',
+    key: 'letsencryptEmail',
+    label: "Let's Encrypt email",
     visible: (s) => s.tlsMode === 'internal',
-    display: (s) => s.httpsPort,
-    ask: async (s) => input({ message: 'HTTPS port to bind on this host', default: String(s.httpsPort ?? 443), validate: portValidate }),
+    display: (s) => s.letsencryptEmail || c.dim('(not set — HTTPS stays off)'),
+    ask: async (s) =>
+      (
+        await input({
+          message: "Contact email for Let's Encrypt (setting it accepts their Subscriber Agreement) — blank to stay on HTTP",
+          default: s.letsencryptEmail || undefined,
+        })
+      ).trim(),
+  },
+  {
+    key: 'rootRedirectUrl',
+    label: 'Root redirect URL',
+    visible: (s) => Boolean(s.basePath),
+    display: (s) => s.rootRedirectUrl || c.dim('(none — other paths 404)'),
+    ask: async (s) =>
+      (
+        await input({
+          message: `Redirect every path outside ${s.basePath} to this URL (e.g. https://apps.example.org${s.basePath}) — blank for none`,
+          default: s.rootRedirectUrl || undefined,
+          validate: (v) => (!v.trim() || /^https?:\/\/\S+$/.test(v.trim()) ? true : 'Use a full URL starting with http:// or https://'),
+        })
+      ).trim(),
   },
   {
     key: 'appPort',
@@ -270,11 +296,12 @@ function printSummary(settings) {
 async function collect(existing) {
   const domain = existing.get('DOMAIN') ?? '';
   const settings = {
-    tlsMode: existing.get('TLS_MODE') === 'internal' ? 'internal' : existing.has('TLS_MODE') ? 'external' : 'internal',
+    tlsMode: existing.get('TLS_MODE') === 'external' ? 'external' : 'internal',
     domain: domain === '_' ? '' : domain,
+    domainAliases: existing.get('DOMAIN_ALIASES') ?? '',
+    letsencryptEmail: existing.get('LETSENCRYPT_EMAIL') ?? '',
     basePath: existing.get('BASE_PATH') ?? '',
-    httpPort: Number(existing.get('HTTP_PORT') ?? 80),
-    httpsPort: Number(existing.get('HTTPS_PORT') ?? 443),
+    rootRedirectUrl: existing.get('ROOT_REDIRECT_URL') ?? '',
     appPort: Number(existing.get('APP_PORT') ?? 8888),
     certPath: '',
     keyPath: '',
@@ -331,9 +358,10 @@ async function reviewLoop(settings) {
 
 async function apply(settings) {
   const envValues = {
-    TLS_MODE: settings.tlsMode === 'internal' ? 'internal' : 'external',
-    DOMAIN: settings.domain || '_',
+    TLS_MODE: settings.tlsMode === 'internal' ? '' : 'external',
+    DOMAIN: settings.domain || '',
     BASE_PATH: settings.basePath || '',
+    ROOT_REDIRECT_URL: settings.basePath ? settings.rootRedirectUrl || '' : '',
     CORS_ORIGINS: settings.corsOrigins,
     SESSION_SECRET: settings.sessionSecret,
     SESSION_COOKIE_SECURE: String(settings.cookieSecure),
@@ -341,9 +369,8 @@ async function apply(settings) {
   const composeFiles = ['docker-compose.yml'];
 
   if (settings.tlsMode === 'internal') {
-    composeFiles.push('docker-compose.internal-tls.yml');
-    envValues.HTTP_PORT = String(settings.httpPort);
-    envValues.HTTPS_PORT = String(settings.httpsPort);
+    envValues.DOMAIN_ALIASES = settings.domainAliases;
+    envValues.LETSENCRYPT_EMAIL = settings.letsencryptEmail;
   } else {
     composeFiles.push('docker-compose.external.yml');
     envValues.APP_PORT = String(settings.appPort);
@@ -386,7 +413,7 @@ async function apply(settings) {
     ok(`Plain HTTP deploy — reachable at http://<this host's IP or hostname>:${settings.appPort}`);
     info('No TLS anywhere in front of this. Add one later by re-running `pnpm run deploy` and switching TLS mode to "internal" or "external" once a proxy/cert exists.');
   } else {
-    info('TLS mode "internal": if certs are not yet issued, follow the certbot bootstrap steps in docs/DEPLOYMENT.md before flipping SESSION_COOKIE_SECURE to true.');
+    info('TLS mode "internal": nginx serves HTTP until certbot has a certificate, then switches to HTTPS on its own (see docs/DEPLOYMENT.md). Set SESSION_COOKIE_SECURE=true once HTTPS is up.');
   }
 }
 

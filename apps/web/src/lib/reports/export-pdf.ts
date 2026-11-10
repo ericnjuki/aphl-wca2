@@ -4,29 +4,30 @@
 import jsPDF from 'jspdf';
 import autoTable, { RowInput } from 'jspdf-autotable';
 import { toPng } from 'html-to-image';
-import type {
-  NationalReportResponse,
-  RegionReportResponse,
-  FacilityReportResponse,
-  DepartmentReportResponse,
-  IndividualReportResponse,
-} from '@/types/reports';
-
-type AnyReport =
-  | NationalReportResponse
-  | RegionReportResponse
-  | FacilityReportResponse
-  | DepartmentReportResponse
-  | IndividualReportResponse;
+import { suppressionText } from './privacy';
+import type { AnyReport, MaturityCounts } from '@/types/reports';
+import { archivedLabel } from './archived';
 
 function titleFor(r: AnyReport): string {
   switch (r.level) {
     case 'national':   return 'National report';
     case 'region':     return `Region · ${r.region.name}`;
+    case 'district':   return `District · ${r.district.name}`;
     case 'facility':   return `Facility · ${r.facility.name}`;
     case 'department': return `Department · ${r.department.name}`;
     case 'individual': return `Individual · ${r.user.first_name} ${r.user.last_name}`;
   }
+}
+
+// Respondents/Avg/level cells. Rows hidden for privacy in the partner view
+// (fewer than 3 respondents, or hidden alongside one so it can't be subtracted
+// out) print a label rather than misleading zeros.
+function countCells(i: MaturityCounts): (string | number)[] {
+  if (i.suppressed) return [suppressionText(i.suppressed).export, '—', '—', '—', '—', '—', '—'];
+  return [
+    i.respondents, (i.avg_level ?? 0).toFixed(1),
+    i.count_beginner, i.count_competent, i.count_proficient, i.count_expert, i.count_na,
+  ];
 }
 
 function breakdownHeadRows(r: AnyReport): { head: string[][]; body: RowInput[] } {
@@ -36,24 +37,28 @@ function breakdownHeadRows(r: AnyReport): { head: string[][]; body: RowInput[] }
       return {
         head: [['Region', 'Respondents', 'Avg', ...levels]],
         body: r.items.map((i) => [
-          i.region_name, i.respondents, (i.avg_level ?? 0).toFixed(1),
-          i.count_beginner, i.count_competent, i.count_proficient, i.count_expert, i.count_na,
+          archivedLabel(i.region_name, i.archived), ...countCells(i),
         ]),
       };
     case 'region':
       return {
+        head: [['District', 'Respondents', 'Avg', ...levels]],
+        body: r.items.map((i) => [
+          archivedLabel(i.district_name, i.archived), ...countCells(i),
+        ]),
+      };
+    case 'district':
+      return {
         head: [['Facility', 'Respondents', 'Avg', ...levels]],
         body: r.items.map((i) => [
-          i.facility_name, i.respondents, (i.avg_level ?? 0).toFixed(1),
-          i.count_beginner, i.count_competent, i.count_proficient, i.count_expert, i.count_na,
+          archivedLabel(i.facility_name, i.archived), ...countCells(i),
         ]),
       };
     case 'facility':
       return {
         head: [['Department', 'Respondents', 'Avg', ...levels]],
         body: r.items.map((i) => [
-          i.department_name, i.respondents, (i.avg_level ?? 0).toFixed(1),
-          i.count_beginner, i.count_competent, i.count_proficient, i.count_expert, i.count_na,
+          archivedLabel(i.department_name, i.archived), ...countCells(i),
         ]),
       };
     case 'department':
@@ -106,7 +111,7 @@ export async function exportPdf(
     `Domain: ${r.meta.filters.domain_code ?? 'All'}`,
     `Competency: ${r.meta.filters.competency_value ?? 'All'}`,
     `Approved only: ${r.meta.filters.approved_only ? 'Yes' : 'No'}`,
-    `Respondents: ${r.meta.total_respondents}`,
+    `Respondents: ${r.meta.privacy_hidden ? 'Hidden for privacy' : r.meta.total_respondents}`,
     `Generated: ${new Date(r.meta.generated_at).toLocaleString()}${opts.userEmail ? ` · by ${opts.userEmail}` : ''}`,
   ];
   doc.text(metaLines.join('    '), 40, 58, { maxWidth: pageW - 80 });

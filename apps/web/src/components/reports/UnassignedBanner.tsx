@@ -21,8 +21,14 @@ const MESSAGES: Record<ReportLevel, { title: string; body: string; cta: string; 
     to:    `${baseUrl}users`,
   },
   region: {
-    title: 'respondents have no facility in this region',
-    body:  "These respondents report at the region level but haven't been placed in a facility. They don't roll up into the facility breakdown.",
+    title: "respondents aren't attributed to a district",
+    body:  "Their facility has no district yet (or they have no facility), so they don't appear in the district breakdown. Assign each facility a district in Setup.",
+    cta:   'Open Setup',
+    to:    `${baseUrl}setup`,
+  },
+  district: {
+    title: 'respondents have no facility in this district',
+    body:  "These respondents report at the district level but haven't been placed in a facility. They don't roll up into the facility breakdown.",
     cta:   'Open Users',
     to:    `${baseUrl}users`,
   },

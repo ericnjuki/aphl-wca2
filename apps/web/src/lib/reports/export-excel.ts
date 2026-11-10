@@ -2,68 +2,66 @@
 // Scope is intentionally narrow — 3 sheets max: Summary, Breakdown, Meta.
 
 import * as XLSX from 'xlsx';
-import type {
-  NationalReportResponse,
-  RegionReportResponse,
-  FacilityReportResponse,
-  DepartmentReportResponse,
-  IndividualReportResponse,
-} from '@/types/reports';
-
-type AnyReport =
-  | NationalReportResponse
-  | RegionReportResponse
-  | FacilityReportResponse
-  | DepartmentReportResponse
-  | IndividualReportResponse;
+import { suppressionText } from './privacy';
+import type { AnyReport, MaturityCounts } from '@/types/reports';
+import { archivedLabel } from './archived';
 
 function titleFor(r: AnyReport): string {
   switch (r.level) {
     case 'national':   return 'National report';
     case 'region':     return `${r.region.name} region`;
+    case 'district':   return `${r.district.name} district`;
     case 'facility':   return r.facility.name;
     case 'department': return r.department.name;
     case 'individual': return `${r.user.first_name} ${r.user.last_name}`;
   }
 }
 
+// Shared count columns. Rows hidden for privacy in the partner view (fewer
+// than 3 respondents, or hidden alongside one so it can't be subtracted out)
+// export as a label rather than misleading zeros.
+function countColumns(i: MaturityCounts): Record<string, unknown> {
+  if (i.suppressed) {
+    return {
+      Respondents: suppressionText(i.suppressed).export, 'Avg level': '',
+      Beginner: '', Competent: '', Proficient: '', Expert: '', 'N/A': '',
+    };
+  }
+  return {
+    Respondents: i.respondents,
+    'Avg level': i.avg_level ?? '',
+    Beginner: i.count_beginner, Competent: i.count_competent,
+    Proficient: i.count_proficient, Expert: i.count_expert,
+    'N/A': i.count_na,
+  };
+}
+
 function breakdownRows(r: AnyReport): Record<string, unknown>[] {
   switch (r.level) {
     case 'national':
       return r.items.map((i) => ({
-        Region: i.region_name,
-        Respondents: i.respondents,
-        'Avg level': i.avg_level ?? '',
-        Beginner: i.count_beginner, Competent: i.count_competent,
-        Proficient: i.count_proficient, Expert: i.count_expert,
-        'N/A': i.count_na,
+        Region: archivedLabel(i.region_name, i.archived),
+        ...countColumns(i),
       }));
     case 'region':
       return r.items.map((i) => ({
-        Facility: i.facility_name,
-        Respondents: i.respondents,
-        'Avg level': i.avg_level ?? '',
-        Beginner: i.count_beginner, Competent: i.count_competent,
-        Proficient: i.count_proficient, Expert: i.count_expert,
-        'N/A': i.count_na,
+        District: archivedLabel(i.district_name, i.archived),
+        ...countColumns(i),
+      }));
+    case 'district':
+      return r.items.map((i) => ({
+        Facility: archivedLabel(i.facility_name, i.archived),
+        ...countColumns(i),
       }));
     case 'facility':
       return r.items.map((i) => ({
-        Department: i.department_name,
-        Respondents: i.respondents,
-        'Avg level': i.avg_level ?? '',
-        Beginner: i.count_beginner, Competent: i.count_competent,
-        Proficient: i.count_proficient, Expert: i.count_expert,
-        'N/A': i.count_na,
+        Department: archivedLabel(i.department_name, i.archived),
+        ...countColumns(i),
       }));
     case 'department':
       return r.items.map((i) => ({
         Person: i.full_name, Title: i.title_name ?? '',
-        Respondents: i.respondents,
-        'Avg level': i.avg_level ?? '',
-        Beginner: i.count_beginner, Competent: i.count_competent,
-        Proficient: i.count_proficient, Expert: i.count_expert,
-        'N/A': i.count_na,
+        ...countColumns(i),
       }));
     case 'individual':
       return r.items.map((i) => ({
@@ -81,7 +79,7 @@ function summaryRows(r: AnyReport): Record<string, unknown>[] {
   return [
     { Field: 'Title', Value: titleFor(r) },
     { Field: 'Level', Value: r.level },
-    { Field: 'Total respondents', Value: r.meta.total_respondents },
+    { Field: 'Total respondents', Value: r.meta.privacy_hidden ? 'Hidden for privacy' : r.meta.total_respondents },
     { Field: 'Domain filter',     Value: r.meta.filters.domain_code ?? 'All' },
     { Field: 'Competency filter', Value: r.meta.filters.competency_value ?? 'All' },
     { Field: 'Approved only',     Value: r.meta.filters.approved_only ? 'Yes' : 'No (includes pending/rejected)' },

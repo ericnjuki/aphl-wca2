@@ -9,6 +9,7 @@
     "build": "tsc",
     "start": "node dist/server.js",
     "typecheck": "tsc --noEmit",
+    "test": "vitest run",
     "lint": "echo 'no lint configured for api'",
     "clean": "rimraf dist node_modules"
   },
@@ -17,6 +18,7 @@
     "compression": "^1.8.0",
     "cors": "^2.8.5",
     "dotenv": "^16.5.0",
+    "exceljs": "^4.4.0",
     "express": "^5.1.0",
     "express-rate-limit": "^7.5.0",
     "express-session": "^1.19.0",
@@ -33,9 +35,12 @@
     "@types/morgan": "^1.9.9",
     "@types/node": "^22.14.0",
     "@types/sql.js": "^1.4.9",
+    "@types/supertest": "^6.0.3",
     "nodemon": "^3.1.9",
+    "supertest": "^7.3.0",
     "ts-node": "^10.9.2",
-    "typescript": "~5.7.2"
+    "typescript": "~5.7.2",
+    "vitest": "^3.2.6"
   },
   "nodemonConfig": {
     "watch": [

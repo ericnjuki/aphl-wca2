@@ -1,0 +1,79 @@
+# Application locations shared by every site config
+# (nginx/templates/*.conf.template). Included inside a `server` block.
+#
+# Rendered to /etc/nginx/snippets/wca-app.conf by 40-wca-config.sh with
+# BASE_PATH substituted: empty (the default) serves the app at the domain
+# root; e.g. "/wca" serves it under that subpath. BASE_PATH must match the
+# VITE_BASE_URL the web bundle was built with (docker-compose.yml build args).
+#
+# $wca_forwarded_proto is defined by each site template: the request's own
+# scheme when nginx terminates TLS, or the scheme relayed by the proxy in
+# front of it when TLS_MODE=external.
+
+client_max_body_size 10m;
+
+# Setup workbook apply — hashing many temporary passwords can take minutes.
+location = ${BASE_PATH}/api/v1/admin/setup/import/apply {
+    proxy_pass http://api_upstream/api/v1/admin/setup/import/apply;
+    proxy_http_version 1.1;
+    proxy_set_header Host              $host;
+    proxy_set_header X-Real-IP         $remote_addr;
+    proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $wca_forwarded_proto;
+    proxy_set_header X-Forwarded-Host  $host;
+    proxy_set_header Connection        "";
+    proxy_read_timeout 600s;
+    proxy_send_timeout 600s;
+}
+
+# API reverse proxy — everything under ${BASE_PATH}/api/ goes to the Node
+# service. The URI part of proxy_pass replaces the matched prefix, so the API
+# always sees /api/... whatever BASE_PATH is.
+location ${BASE_PATH}/api/ {
+    proxy_pass http://api_upstream/api/;
+    proxy_http_version 1.1;
+    proxy_set_header Host              $host;
+    proxy_set_header X-Real-IP         $remote_addr;
+    proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $wca_forwarded_proto;
+    proxy_set_header X-Forwarded-Host  $host;
+    proxy_set_header Connection        "";
+    proxy_read_timeout 60s;
+    proxy_send_timeout 60s;
+}
+
+# Static assets — long cache with immutable hashes from Vite. `alias` (not
+# `root`) so the BASE_PATH prefix is dropped when mapping to disk.
+location ${BASE_PATH}/assets/ {
+    alias /usr/share/nginx/html/assets/;
+    expires 1y;
+    add_header Cache-Control "public, immutable";
+    try_files $uri =404;
+}
+
+# Correct MIME for sqlite-wasm.
+location ~* ^${BASE_PATH}/(.*\.wasm)$ {
+    alias /usr/share/nginx/html/$1;
+    default_type application/wasm;
+    add_header Cache-Control "public, max-age=31536000, immutable";
+}
+
+# SPA fallback — everything else serves index.html so React Router works.
+location ${BASE_PATH}/ {
+    alias /usr/share/nginx/html/;
+    index index.html;
+    try_files $uri $uri/ ${BASE_PATH}/index.html;
+}
+
+# Optional redirect of everything outside BASE_PATH, rendered only when
+# BASE_PATH and ROOT_REDIRECT_URL are both set (see 40-wca-config.sh). Used
+# when an old domain that served the app at "/" now points here.
+ROOT_REDIRECT_BLOCK
+
+gzip on;
+gzip_vary on;
+gzip_min_length 1024;
+gzip_types
+    text/plain text/css text/javascript
+    application/javascript application/json application/wasm
+    image/svg+xml;

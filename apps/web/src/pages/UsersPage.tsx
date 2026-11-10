@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Plus,
@@ -24,13 +25,6 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -60,12 +54,22 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
+import { buildUserBody, type UserForm } from "@/lib/users/placement";
 import { api } from "@/lib/api";
 import { useAuthStore } from "@/store/auth";
+
+const ENV = import.meta.env;
+const baseUrl = ENV.VITE_BASE_URL || "/";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 interface Facility {
+  id: number;
+  code: string;
+  name: string;
+}
+interface Region {
   id: number;
   code: string;
   name: string;
@@ -105,23 +109,9 @@ interface User {
   org_role_name: string | null;
   title_id: number | null;
   title_name: string | null;
+  regions: { id: number; name: string }[];
+  region_ids: number[];
   temp_password: string | null;
-}
-
-interface ImportCredential {
-  user_name: string;
-  temp_password: string;
-}
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-function readFileAsText(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = (e) => resolve(e.target?.result as string);
-    reader.onerror = () => reject(new Error("Failed to read file"));
-    reader.readAsText(file);
-  });
 }
 
 // ── Temp password cell ────────────────────────────────────────────────────────
@@ -170,6 +160,7 @@ interface UserFormSheetProps {
   departments: Department[];
   orgRoles: OrgRole[];
   titles: UserTitle[];
+  regions: Region[];
   onSaved: () => void;
 }
 
@@ -181,9 +172,10 @@ function UserFormSheet({
   departments,
   orgRoles,
   titles,
+  regions,
   onSaved,
 }: UserFormSheetProps) {
-  const [form, setForm] = useState({
+  const [form, setForm] = useState<UserForm>({
     first_name: "",
     last_name: "",
     national_id: "",
@@ -194,6 +186,7 @@ function UserFormSheet({
     department_id: "",
     org_role_id: "",
     title_id: "",
+    region_ids: [],
     is_enabled: true,
   });
   const [loading, setLoading] = useState(false);
@@ -213,6 +206,7 @@ function UserFormSheet({
           : "",
         org_role_id: initial?.org_role_id ? String(initial.org_role_id) : "",
         title_id: initial?.title_id ? String(initial.title_id) : "",
+        region_ids: initial?.region_ids ?? [],
         is_enabled: initial?.is_enabled ?? true,
       });
     }
@@ -224,14 +218,12 @@ function UserFormSheet({
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (form.role === "monitor" && form.region_ids.length === 0) {
+      toast.error("Select at least one region for a partner user.");
+      return;
+    }
     setLoading(true);
-    const body = {
-      ...form,
-      facility_id: form.facility_id ? Number(form.facility_id) : null,
-      department_id: form.department_id ? Number(form.department_id) : null,
-      org_role_id: form.org_role_id ? Number(form.org_role_id) : null,
-      title_id: form.title_id ? Number(form.title_id) : null,
-    };
+    const body = buildUserBody(form);
     const res = initial
       ? await api.put(`/admin/users/${initial.id}`, body)
       : await api.post("/admin/users", body);
@@ -250,6 +242,13 @@ function UserFormSheet({
     onValueChange: (v: string) =>
       setForm((f) => ({ ...f, [field]: v === "__none__" ? "" : v })),
   });
+
+  const isMonitor = form.role === "monitor";
+  const toggleRegion = (rid: number, on: boolean) =>
+    setForm((f) => ({
+      ...f,
+      region_ids: on ? [...f.region_ids, rid] : f.region_ids.filter((x) => x !== rid),
+    }));
 
   return (
     <Sheet open={open} onOpenChange={(v) => !v && onClose()}>
@@ -315,92 +314,119 @@ function UserFormSheet({
                 <SelectContent>
                   <SelectItem value="staff">Staff</SelectItem>
                   <SelectItem value="admin">Admin</SelectItem>
+                  <SelectItem value="monitor">Partner (monitor)</SelectItem>
                 </SelectContent>
               </Select>
 
-              <Label className="text-right text-sm">Facility</Label>
-              <Select {...selProps("facility_id")}>
-                <SelectTrigger className="text-sm">
-                  <SelectValue placeholder="— None —" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectGroup>
-                    <SelectItem value="__none__">— None —</SelectItem>
-                    {facilities.map((f) => (
-                      <SelectItem
-                        key={f.id}
-                        value={String(f.id)}
-                        description={f.code}
-                      >
-                        {f.name}
-                      </SelectItem>
-                    ))}
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
-
-              <Label className="text-right text-sm">Department</Label>
-              <Select {...selProps("department_id")}>
-                <SelectTrigger className="text-sm">
-                  <SelectValue placeholder="— None —" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectGroup>
-                    <SelectItem value="__none__">— None —</SelectItem>
-                    {departments.map((d) => (
-                      <SelectItem
-                        key={d.id}
-                        value={String(d.id)}
-                        description={d.code}
-                      >
-                        {d.name}
-                      </SelectItem>
-                    ))}
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
-
-              <Label className="text-right text-sm">Org Role</Label>
-              <Select {...selProps("org_role_id")}>
-                <SelectTrigger className="text-sm">
-                  <SelectValue placeholder="— None —" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectGroup>
-                    <SelectItem value="__none__">— None —</SelectItem>
-                    {orgRoles.map((r) => (
-                      <SelectItem
-                        key={r.id}
-                        value={String(r.id)}
-                        description={r.code}
-                      >
+              {isMonitor && (
+                <>
+                  <Label className="self-start pt-1 text-right text-sm">Regions</Label>
+                  <div className="flex flex-col gap-2">
+                    {regions.length === 0 && (
+                      <span className="text-xs text-muted-foreground">No regions set up yet.</span>
+                    )}
+                    {regions.map((r) => (
+                      <label key={r.id} className="flex items-center gap-2 text-sm">
+                        <Checkbox
+                          checked={form.region_ids.includes(r.id)}
+                          onCheckedChange={(v) => toggleRegion(r.id, v === true)}
+                        />
                         {r.name}
-                      </SelectItem>
+                      </label>
                     ))}
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
+                    <span className="text-xs text-muted-foreground">
+                      Partners see summary reports for these regions only.
+                    </span>
+                  </div>
+                </>
+              )}
+              {!isMonitor && (
+                <>
+                <Label className="text-right text-sm">Facility</Label>
+                <Select {...selProps("facility_id")}>
+                  <SelectTrigger className="text-sm">
+                    <SelectValue placeholder="— None —" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      <SelectItem value="__none__">— None —</SelectItem>
+                      {facilities.map((f) => (
+                        <SelectItem
+                          key={f.id}
+                          value={String(f.id)}
+                          description={f.code}
+                        >
+                          {f.name}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
 
-              <Label className="text-right text-sm">Job Title</Label>
-              <Select {...selProps("title_id")}>
-                <SelectTrigger className="text-sm">
-                  <SelectValue placeholder="— None —" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectGroup>
-                    <SelectItem value="__none__">— None —</SelectItem>
-                    {titles.map((t) => (
-                      <SelectItem
-                        key={t.id}
-                        value={String(t.id)}
-                        description={t.code}
-                      >
-                        {t.name}
-                      </SelectItem>
-                    ))}
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
+                <Label className="text-right text-sm">Department</Label>
+                <Select {...selProps("department_id")}>
+                  <SelectTrigger className="text-sm">
+                    <SelectValue placeholder="— None —" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      <SelectItem value="__none__">— None —</SelectItem>
+                      {departments.map((d) => (
+                        <SelectItem
+                          key={d.id}
+                          value={String(d.id)}
+                          description={d.code}
+                        >
+                          {d.name}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+
+                <Label className="text-right text-sm">Org Role</Label>
+                <Select {...selProps("org_role_id")}>
+                  <SelectTrigger className="text-sm">
+                    <SelectValue placeholder="— None —" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      <SelectItem value="__none__">— None —</SelectItem>
+                      {orgRoles.map((r) => (
+                        <SelectItem
+                          key={r.id}
+                          value={String(r.id)}
+                          description={r.code}
+                        >
+                          {r.name}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+
+                <Label className="text-right text-sm">Job Title</Label>
+                <Select {...selProps("title_id")}>
+                  <SelectTrigger className="text-sm">
+                    <SelectValue placeholder="— None —" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      <SelectItem value="__none__">— None —</SelectItem>
+                      {titles.map((t) => (
+                        <SelectItem
+                          key={t.id}
+                          value={String(t.id)}
+                          description={t.code}
+                        >
+                          {t.name}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+                </>
+              )}
 
               {initial && (
                 <>
@@ -434,144 +460,6 @@ function UserFormSheet({
         </form>
       </SheetContent>
     </Sheet>
-  );
-}
-
-// ── Import dialog ─────────────────────────────────────────────────────────────
-
-interface ImportResult {
-  imported: number;
-  skipped?: number;
-  credentials: ImportCredential[];
-}
-
-interface ImportDialogProps {
-  open: boolean;
-  onClose: () => void;
-  onImported: (result: ImportResult) => void;
-}
-
-function ImportDialog({ open, onClose, onImported }: ImportDialogProps) {
-  const fileRef = useRef<HTMLInputElement>(null);
-  const [loading, setLoading] = useState(false);
-
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    const file = fileRef.current?.files?.[0];
-    if (!file) {
-      toast.error("Select a CSV file first.");
-      return;
-    }
-    setLoading(true);
-    const csv = await readFileAsText(file);
-    const res = await api.post<ImportResult>("/admin/users/import", { csv });
-    setLoading(false);
-    if (res.error !== null) {
-      toast.error(res.error);
-      return;
-    }
-    onImported(res.data);
-    onClose();
-  }
-
-  return (
-    <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="sm:max-w-lg">
-        <DialogHeader>
-          <DialogTitle>Import Users from CSV</DialogTitle>
-        </DialogHeader>
-        <form onSubmit={handleSubmit} className="flex flex-col gap-4 py-2">
-          <p className="text-sm text-muted-foreground">
-            Required columns: <code>first_name</code>, <code>last_name</code>,{" "}
-            <code>national_id</code>, <code>id_type</code>, <code>email</code>.
-            <br />
-            Optional: <code>facility_code</code>, <code>department_code</code>,{" "}
-            <code>role_code</code>, <code>title_code</code>.
-          </p>
-          <Input ref={fileRef} type="file" accept=".csv" required />
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={onClose}>
-              Cancel
-            </Button>
-            <Button type="submit" disabled={loading}>
-              {loading ? "Importing…" : "Import"}
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-// ── Credentials dialog (shown after import) ───────────────────────────────────
-
-function CredentialsDialog({
-  result,
-  onClose,
-}: {
-  result: ImportResult | null;
-  onClose: () => void;
-}) {
-  if (!result) return null;
-
-  function downloadCsv() {
-    const header = "username,temp_password";
-    const rows = result!.credentials.map(
-      (c) => `${c.user_name},${c.temp_password}`,
-    );
-    const blob = new Blob([[header, ...rows].join("\n")], { type: "text/csv" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "credentials.csv";
-    a.click();
-    URL.revokeObjectURL(url);
-  }
-
-  return (
-    <Dialog open onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="sm:max-w-lg">
-        <DialogHeader>
-          <DialogTitle>
-            Import complete — {result.imported} created
-            {result.skipped ? `, ${result.skipped} skipped` : ""}
-          </DialogTitle>
-        </DialogHeader>
-        <p className="text-sm text-muted-foreground">
-          These are the temporary passwords. Users will be prompted to change
-          them on first login. Download or copy them now — they are also visible
-          per-user in the table.
-        </p>
-        <div className="max-h-64 overflow-y-auto rounded-md border">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Username</TableHead>
-                <TableHead>Temp Password</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {result.credentials.map((c) => (
-                <TableRow key={c.user_name}>
-                  <TableCell className="text-xs font-mono">
-                    {c.user_name}
-                  </TableCell>
-                  <TableCell className="text-xs font-mono">
-                    {c.temp_password}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={downloadCsv}>
-            Download CSV
-          </Button>
-          <Button onClick={onClose}>Done</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
   );
 }
 
@@ -619,8 +507,6 @@ export default function UsersPage() {
 
   const [sheetOpen, setSheetOpen] = useState(false);
   const [editing, setEditing] = useState<User | null>(null);
-  const [importOpen, setImportOpen] = useState(false);
-  const [importResult, setImportResult] = useState<ImportResult | null>(null);
   const [resetTarget, setResetTarget] = useState<User | null>(null);
 
   // Search + pagination (client-side — user list is small).
@@ -666,6 +552,15 @@ export default function UsersPage() {
     },
   });
 
+  const { data: regions = [] } = useQuery({
+    queryKey: ["admin", "regions"],
+    queryFn: async () => {
+      const r = await api.get<{ regions: Region[] }>("/admin/regions");
+      if (r.error !== null) throw new Error(r.error);
+      return r.data.regions;
+    },
+  });
+
   const { data: users = [], isLoading } = useQuery({
     queryKey: ["admin", "users"],
     queryFn: async () => {
@@ -689,6 +584,7 @@ export default function UsersPage() {
         u.user_name.toLowerCase().includes(q) ||
         u.email.toLowerCase().includes(q) ||
         (u.facility_name ?? "").toLowerCase().includes(q) ||
+        u.regions.some((r) => r.name.toLowerCase().includes(q)) ||
         (u.department_name ?? "").toLowerCase().includes(q),
     );
   }, [users, searchInput]);
@@ -730,13 +626,10 @@ export default function UsersPage() {
       <div className="flex flex-1" />
       {isAdmin && (
         <div className="flex items-center gap-2">
-          <Button
-            size="sm"
-            variant="outline"
-            className="h-8 gap-1.5 text-xs"
-            onClick={() => setImportOpen(true)}
-          >
-            <FileUp className="h-3.5 w-3.5" /> Import CSV
+          <Button asChild size="sm" variant="outline" className="h-8 gap-1.5 text-xs">
+            <Link to={`${baseUrl}setup`} title="Bulk-import users with the country setup workbook">
+              <FileUp className="h-3.5 w-3.5" /> Bulk import on Setup
+            </Link>
           </Button>
           <Button
             size="sm"
@@ -776,7 +669,7 @@ export default function UsersPage() {
                       Email
                     </TableHead>
                     <TableHead className="text-xs uppercase tracking-wide">
-                      Facility
+                      Facility / Regions
                     </TableHead>
                     <TableHead className="text-xs uppercase tracking-wide">
                       Department
@@ -812,7 +705,7 @@ export default function UsersPage() {
                         className="py-8 text-center text-muted-foreground"
                       >
                         {users.length === 0
-                          ? "No users yet. Add one or import a CSV."
+                          ? "No users yet. Add one, or bulk-import users with the workbook on the Setup page."
                           : "No users match your search."}
                       </TableCell>
                     </TableRow>
@@ -834,13 +727,21 @@ export default function UsersPage() {
                         </TableCell>
                         <TableCell className="text-xs">{u.email}</TableCell>
                         <TableCell className="text-xs text-muted-foreground">
-                          {u.facility_name ?? "—"}
+                          {u.role === "monitor"
+                            ? u.regions.map((r) => r.name).join(", ") || "—"
+                            : u.facility_name ?? "—"}
                         </TableCell>
                         <TableCell className="text-xs text-muted-foreground">
                           {u.department_name ?? "—"}
                         </TableCell>
                         <TableCell className="text-xs text-muted-foreground">
-                          {u.org_role_name ?? u.title_name ?? "—"}
+                          {u.role === "monitor" ? (
+                            <Badge variant="outline" className="whitespace-nowrap text-[10px] uppercase">
+                              Partner
+                            </Badge>
+                          ) : (
+                            u.org_role_name ?? u.title_name ?? "—"
+                          )}
                         </TableCell>
                         <TableCell>
                           <Badge
@@ -919,21 +820,8 @@ export default function UsersPage() {
         departments={departments}
         orgRoles={orgRoles}
         titles={titles}
+        regions={regions}
         onSaved={invalidate}
-      />
-
-      <ImportDialog
-        open={importOpen}
-        onClose={() => setImportOpen(false)}
-        onImported={(result) => {
-          setImportResult(result);
-          invalidate();
-        }}
-      />
-
-      <CredentialsDialog
-        result={importResult}
-        onClose={() => setImportResult(null)}
       />
 
       <ResetPasswordDialog
