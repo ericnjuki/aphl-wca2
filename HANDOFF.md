@@ -5,30 +5,27 @@ _Updated: 2026-11-10_
 
 ## Last session
 
-Executing `plans/2026-11-10-upstream-merge.md` (status in-progress). Done: docs commit on `main`
-(`7995304`, pushed); branch `merge/upstream-2026-11` with the merge commit `b761282` (Fred's
-layout as base, our switches opt-in; on overlap his approach wins, per the user); typecheck,
-build, API 215/215, web 57/57 tests pass; nginx render matrix passed for all four modes (root
-default, root external, /wca external + redirect, /wca default), cookie relay verified.
-Branch pushed to `fork`. Both servers were at `fdd29e2`; their `.env` needs no change.
+Executed the upstream merge end to end (`plans/archive/2026-11-10-upstream-merge.md`): Fred's
+99 commits merged, our hosting switches ported onto his nginx layout, tests green (API 215,
+web 57), nginx mode matrix + local Playwright pass at /wca all passed. **UAT and prod are live
+on the merged code**; migrations 10–11 applied on both. DB backups taken first:
+UAT `~/backups/wca-api_data-uat-20261110-131740.tgz`, prod
+`~/backups/wca-api_data-prod-20261110-132047.tgz` (copy in local `~/Downloads`).
 
 ## In progress
 
-Plan steps 4–6: local Playwright pass at /wca (subagent), UAT deploy, prod deploy. See the
-section below for where it stopped.
-
-## Gotchas found this session
-
-- Git Bash mangles `/wca` args to docker (`C:/Program Files/Git/wca`): `export MSYS_NO_PATHCONV=1`.
-- PowerShell → ssh: pass multi-line scripts base64-encoded (`echo <b64> | base64 -d | bash`);
-  piping stdin adds a BOM + CRLF, and inner double quotes get stripped.
+Nothing.
 
 ## Next
 
-1. Finish whatever of steps 5–7 is not marked done below; then merge the branch into `main`,
-   push to `fork`, archive the plan, record the merged nginx design in DECISIONS → Architecture.
-2. Ask the user about the TODO items that need a go-ahead.
+1. Both servers have the branch `merge/upstream-2026-11` checked out (same commit as `main`
+   then). On the next deploy, `git checkout main && git pull` there first.
+2. Login/cookie wasn't exercised on UAT/prod (admins no longer use the seeded password); it
+   passed locally. If the user reports login trouble, see DECISIONS → Gotchas (X-Forwarded-Proto).
+3. Ask the user about the TODO items needing a go-ahead (old aphl-wca containers; upstream PR).
 
-## Stopping point
+## Gotchas found this session
 
-- (filled in as steps complete)
+- Git Bash mangles `/wca`-style args (docker `-e`, curl `-w`): `export MSYS_NO_PATHCONV=1`.
+- PowerShell → ssh: send multi-line scripts base64-encoded (`echo <b64> | base64 -d | bash`);
+  piping stdin adds a BOM + CRLF, and inner double quotes get stripped.

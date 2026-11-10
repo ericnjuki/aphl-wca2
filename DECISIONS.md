@@ -15,11 +15,16 @@ Durable business rules and architecture/design decisions. Detail lives in `docs/
   `sql.js`: it loads the whole DB into memory at startup and overwrites the whole file on every
   write (`persistDb()`), with no cross-process locking. Each process would silently clobber the
   other's writes.
-- (2026-09-16) **The nginx config is rendered at container start from env vars.** Templates and the
-  render script live under `nginx/`. `BASE_PATH` picks root vs. subpath (limits above).
-  `scripts/deploy.mjs` is the interactive deploy CLI: it writes `.env`, picks the compose overlay
-  and runs `docker compose up -d --build`. The merge in `plans/2026-11-10-upstream-merge.md`
-  rebases this onto upstream's layout.
+- (2026-09-16, rev. 2026-11-10) **The nginx layer is upstream's design with our hosting switches
+  as opt-in env vars** (merge: `plans/archive/2026-11-10-upstream-merge.md`).
+  `nginx/docker-entrypoint.d/40-wca-config.sh` renders `nginx/snippets/wca-app.conf.template`
+  (all app locations, `BASE_PATH`-prefixed, plus the optional `ROOT_REDIRECT_URL` block) and one
+  site template: `http`/`https` (upstream's certbot auto-switch) or `external`
+  (`TLS_MODE=external`, plain HTTP, no cert watch). `X-Forwarded-Proto` comes from a per-template
+  `map`: `$scheme` where nginx terminates TLS, the relayed header in external mode.
+  `docker-compose.external.yml` replaces the 80/443 bindings with `APP_PORT` (`!override`) and
+  keeps certbot off. Where upstream and we built the same thing, upstream's version wins and ours
+  only extends it (user's rule, 2026-11-10).
 
 ## Repo / Workflow
 
