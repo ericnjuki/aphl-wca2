@@ -1,73 +1,25 @@
 # Handoff
 
-Live status doc for picking up this project cold in a new session — not a changelog and not a
-decisions log (durable rules go in `DECISIONS.md` instead, then get deleted from here).
+<!-- Rules: ~/.claude/doc-system.md. Overwritten each session, never appended. ≤50 lines. -->
+_Updated: 2026-11-10_
 
-**Maintenance rules — read before editing this file, every time:**
-- Update this file as you work, not only at the start or end of a session. Any time you finish a
-  step that changes what's true — a task completes, a plan changes, a blocker appears or clears —
-  update the relevant section immediately, in the same turn. Waiting until "wrap-up" is the single
-  most common way this file goes stale; treat every edit to project code as a trigger to check
-  whether this file still describes reality.
-- At the **start** of every session, before doing anything else: re-read this whole file against
-  the actual current state of the repo (git status/log, running the app if needed) and delete or
-  correct anything that's no longer accurate. Do not assume it's current just because it was
-  written recently.
-- At the **end** of every session, replace the *entire contents* of "Session Handoff — do this
-  next" (not append to it) with: a short paragraph (one or two sentences — durable decisions
-  belong in `DECISIONS.md`, not here) on what this session accomplished, then concrete instructions
-  for what the next session should do. If the session ends mid-task, write an "In progress" item
-  instead of a finished-work paragraph, naming the relevant plan file and the exact point
-  implementation stopped.
-- A completed item that had real decisions behind it must be captured in `DECISIONS.md` *before*
-  it is deleted from here — deleting without moving the decision loses it permanently.
-- Keep "Current State" and "Open Threads" limited to what's true *right now*. An item that's done
-  gets deleted, not marked done and left in place — a growing list of checked-off items is itself
-  a symptom of staleness.
+## Last session
 
-## ⚠ First task: migrate to doc-system v1 (added 2026-09-26, keep until done)
+Migrated the docs to doc-system v1 (`plans/archive/2026-11-10-docs-migration.md`). Investigated the
+fork vs. upstream (`origin/main`, 99 commits ahead) and got sign-off on
+`plans/2026-11-10-upstream-merge.md`. The user wants minimal involvement: run it end to end,
+deploys included.
 
-Do this before anything in "do this next" below. Don't delete this section when you rewrite the
-handoff; the migration removes it. This repo is on the old doc layout (rules copied into file
-headers, todos scattered, undated plans). The new policy is global: `~/.claude/doc-system.md`,
-checked at session start by `~/.claude/scripts/check-docs.sh`. It was piloted in
-`../aphl-metrics` (see its `plans/archive/2026-09-26-docs-system.md` for a worked example).
+## In progress
 
-- **How:** invoke the `project-docs` skill in **migrate mode**. It measures, drafts
-  `plans/YYYY-MM-DD-docs-migration.md` for sign-off, executes, then runs the checker until it's
-  clean.
-- **Measured 2026-09-26:** CLAUDE.md 14L, DECISIONS.md 141L, HANDOFF.md 56L, plans/ 1 files (budgets: CLAUDE ≤150, DECISIONS ≤300, HANDOFF ≤50).
-- **Repo-specific notes:** keep "pnpm/deploy commands are run by the user, not Claude" and the shadcn-conventions design rule. The git-status rule is now global.
-- Generic conventions now live in `~/.claude/CLAUDE.md` (git status at start, commit only when
-  asked, SSH/SCP via PowerShell, fixed-name test binaries, never kill browsers by image name).
-  Remove duplicates of those from this repo; keep repo-specific parts (ports, binary/host names).
+Nothing. The merge plan is signed off but not started; no branch exists yet. Docs changes are
+uncommitted on `main`.
 
-## Current State
-`apps.nphl.go.ke/wca` and the `wca.nphl.go.ke` → `apps.nphl.go.ke/wca` redirect are **live in prod
-and browser-verified** as of 2026-09-16, including the forced first-login password-change flow —
-login, session-cookie persistence, and change-password all confirmed working end-to-end (after the
-`X-Forwarded-Proto` fix below), redirect lands correctly, no known issues. `analytics-svr`'s
-`wca-nginx`/`wca-api` run commit `fdd29e2` with `BASE_PATH=/wca`,
-`ROOT_REDIRECT_URL=https://apps.nphl.go.ke/wca`, and `CORS_ORIGINS=https://apps.nphl.go.ke` in
-`.env`. Prod DB (`aphl-wca2_api_data` volume on `analytics-svr`) was wiped and re-seeded fresh
-2026-09-16 (see below) — currently just the seeded `admin`/`APHLwca2024` user (`is_first_login:
-true`) and the standard assessment catalog, no other data. UAT (`143.198.180.142:20822`,
-`~/projects/aphl-wca2`, `wca.ken-info.org`) is also on `fdd29e2` (pulled + rebuilt from 9 commits
-behind on 2026-09-16), containers healthy; UAT's own DB was **not** touched by this session's reset.
+## Next
 
-## Open Threads
-- **Not started**: back up `aphl-wca-postgresdb-1` (old leftover container, port 5434) to
-  `~/Downloads/aphl-wca-postgres-backup-<date>.sql.gz` on this machine, then stop+remove it and
-  `aphl-wca-aphl-api-1` (port 6868) — plan step 4, the only remaining step in
-  `plans/2026-09-16-wca-subpath-deploy.md`.
-
-## Session Handoff — do this next
-This session (2026-09-18) was a short doc-only follow-up to the 2026-09-16 work described in
-Current State above (the `X-Forwarded-Proto`/cookie fix and prod DB reset are already durable in
-`DECISIONS.md` and reflected there, not repeated here). It recorded one new fact in `DECISIONS.md` →
-Infrastructure: this operator has **no write access to `origin`**
-(`APHL-Global-Health/workforce-competency`) — the local `main` tracks `fork`
-(`ericnjuki/aphl-wca2`) instead, so a bare `git push` goes to `fork`, not `origin`; getting a change
-into `origin` needs someone with write access there. Nothing else changed this session. Next session:
-the postgres backup + old-container retirement is still the only open item (see Open Threads) —
-otherwise pick up wherever the next task points.
+1. Commit the docs changes on `main` as a docs-only commit (the user approved the migration; the
+   no-docs-upstream rule is in DECISIONS → Repo / Workflow) and push to `fork`.
+2. Execute `plans/2026-11-10-upstream-merge.md` from step 1, setting its status to `in-progress`
+   as you start. Start Docker Desktop locally first (it wasn't running on 2026-11-10).
+3. When it's deployed and verified, record the merged nginx design in DECISIONS → Architecture,
+   archive the plan, and ask the user about the TODO items that need a go-ahead.
