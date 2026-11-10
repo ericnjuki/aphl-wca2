@@ -18,11 +18,30 @@ Nothing.
 
 ## Next
 
-1. Both servers have the branch `merge/upstream-2026-11` checked out (same commit as `main`
-   then). On the next deploy, `git checkout main && git pull` there first.
-2. Login/cookie wasn't exercised on UAT/prod (admins no longer use the seeded password); it
-   passed locally. If the user reports login trouble, see DECISIONS → Gotchas (X-Forwarded-Proto).
-3. Ask the user about the TODO items needing a go-ahead (old aphl-wca containers; upstream PR).
+0. Assessment DONE: `docs/2026-11-10-old-vs-new-db-assessment.md`. Pilot data dumped to UAT
+   `~/backups/aphl-wca-postgres-backup-2026-11-10.sql.gz` (sha256 df28dce1…, row counts verified);
+   old app fully removed from prod (containers, volume, image, networks, `~/projects/aphl-wca`) on the user's
+   instruction. Dump copies (sha256 df28dce1…, chmod 600): UAT, server 46 `~/backups/`, local `~/Downloads`.
+   Blank-page incident deferred (TODO).
+1. **(Original brief, kept for reference) Read-only assessment, no changes.**
+   - Old app on prod: `aphl-wca-aphl-api-1` (:6868) + `aphl-wca-postgresdb-1` (:5434,
+     postgres:14.5). Is its data on a named volume or anonymous? Every table, column and row
+     count; what assessment/user data exists; how auth works (users, password hashing,
+     sessions/tokens). Find its source repo/image.
+   - New app (aphl-wca2): its DB (sql.js/SQLite in the `aphl-wca2_api_data` volume), schema,
+     migrations, auth.
+   - Compare the two. The user believed upstream was only "enhancements and fixes" and asks
+     whether Postgres was replaced wholesale. Known: our fork point `688d736` already used
+     sql.js, so any switch predates today's merge. Find when it happened and who made it
+     (git history of `apps/api/src/db/`, and the old repo).
+   - Deliver a written report. Read-only on prod (`pg_dump`/queries are fine; take the dump
+     to `~/Downloads/aphl-wca-postgres-backup-<date>.sql.gz` first).
+2. Old-container removal: user said yes, but **only after** the assessment and the dump.
+3. Both servers have the branch `merge/upstream-2026-11` checked out (same commit as `main`).
+   On the next deploy, `git checkout main && git pull` there first.
+4. Login/cookie wasn't exercised on UAT/prod (admins no longer use the seeded password); it
+   passed locally. If login breaks, see DECISIONS → Gotchas (X-Forwarded-Proto).
+5. The user is reviewing the merge (`b761282`) and the files listed in DECISIONS → Architecture.
 
 ## Gotchas found this session
 

@@ -64,9 +64,11 @@ Durable business rules and architecture/design decisions. Detail lives in `docs/
   dead. Server 46 (the `*.nphl.go.ke` gateway) has no `wca`/`apps` vhost.
   Sibling paths on that vhost: `/labmapping2025`→3903, `/surveillance_dashboard`→3904,
   `/partners`→3905, `/metabase/`→3901, `/auth/`→5151, `/dashboard`→3902.
-- (2026-09-16) **The old `aphl-wca` repo's containers on prod are dead leftovers:**
-  `aphl-wca-aphl-api-1` (`:6868`) and `aphl-wca-postgresdb-1` (`:5434`, `postgres:14.5`). Back
-  up the postgres data before removing them (see `TODO.md`).
+- (2026-09-16, rev. 2026-11-10) **The old `aphl-wca` app (a separate 2024 Postgres codebase, not an
+  ancestor of this repo) is fully removed from prod (2026-11-10):** containers, volume, image, networks
+  and the `~/projects/aphl-wca` checkout. The May 2025 pilot data survives only as the dump
+  `aphl-wca-postgres-backup-2026-11-10.sql.gz` (sha256 `df28dce1…`) in `~/backups/` on UAT and on server 46,
+  plus local `~/Downloads`. See `docs/2026-11-10-old-vs-new-db-assessment.md`.
 - (2026-09-16) **More host and access detail lives in `../aphl-metrics/docs/`** (`architecture.md`
   § Hosts, `server-46.md`, `v2-discovery-inventory.md`). That repo's discovery passes are the most
   current server inventory.
