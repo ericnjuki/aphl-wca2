@@ -5,28 +5,25 @@ _Updated: 2026-11-11_
 
 ## Last session
 
-2026-11-12: scoped the role model rework with the user (Admin / National / County coordinator /
-Sub-county coordinator / Facility admin / Staff, scoped reviews with an answers view, configurable
-county/sub-county labels). Drafted `plans/2026-11-12-role-model.md`. Earlier (2026-11-11): prod test
-data wiped, backup `~/backups/wca-api_data-prod-20261111-083646-prewipe.tgz` (prod + local `~/Downloads`).
+2026-11-12: role-model plan signed off (`plans/2026-11-12-role-model.md`); backend build started on
+branch `feat/role-model` (WIP commit, **does not type-check yet**). Session ended at the context limit.
 
 ## In progress
 
-`plans/2026-11-12-role-model.md`: **draft**, awaiting the user's sign-off. No code written.
+`plans/2026-11-12-role-model.md`, Backend section. Done (WIP commit on `feat/role-model`):
+- `lib/roles.ts` (role codes + groups), migration 12 (`user_districts`, monitor→county).
+- `middleware/auth.ts`: `requireRole`, `requireAssessmentTaker` (`denyMonitor` removed; survey.ts uses it).
+- `lib/org.ts`: `getUserDistricts`; `withRegions` also returns `districts`/`district_ids`.
+- `lib/report-scope.ts` rewritten per role (+ `isSummaryOnly`, `districtIds`).
+- `routes/reports.ts`: monitor checks → `isSummaryOnly`; subcounty never district-privacy-hidden.
+Stopped before: Backend steps 4 (national per-county list suppression + remainder pseudo-row, not
+done), 5 reviews router, 6 users router (still references `monitor`), 7 workbook, 8 labels `/config`.
 
 ## Next
 
-1. Get sign-off on the role-model plan, then implement it (fork-only; see plan).
-0. Assessment DONE: `docs/2026-11-10-old-vs-new-db-assessment.md`. Pilot data dumped to UAT
-   `~/backups/aphl-wca-postgres-backup-2026-11-10.sql.gz` (sha256 df28dce1…, row counts verified);
-   old app fully removed from prod (containers, volume, image, networks, `~/projects/aphl-wca`) on the user's
-   instruction. Dump copies (sha256 df28dce1…, chmod 600): UAT, server 46 `~/backups/`, local `~/Downloads`.
-   Blank-page incident deferred (TODO).
-3. Both servers have the branch `merge/upstream-2026-11` checked out (same commit as `main`).
-   On the next deploy, `git checkout main && git pull` there first.
-4. Login/cookie wasn't exercised on UAT/prod (admins no longer use the seeded password); it
-   passed locally. If login breaks, see DECISIONS → Gotchas (X-Forwarded-Proto).
-5. The user is reviewing the merge (`b761282`) and the files listed in DECISIONS → Architecture.
+1. Finish Backend 4–8, fix `pnpm -F api` type check, rewrite monitor tests + new role tests.
+2. Web section of the plan, then type/build/tests; report done and ask before a live test pass.
+3. Email: separate plan after this (TODO.md).
 
 ## Gotchas found this session
 

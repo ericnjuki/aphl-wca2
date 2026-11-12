@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { query } from '../db/database';
 import { createError } from './errorHandler';
+import { isFacilityRole, type Role } from '../lib/roles';
 
 /**
  * Requires a valid session for a user that still exists and is enabled.
@@ -31,26 +32,35 @@ export function requirePasswordChanged(req: Request, _res: Response, next: NextF
   next();
 }
 
+function roleOf(req: Request): string | undefined {
+  return query<{ role: string }>('SELECT role FROM users WHERE id = ?', [req.session.userId!])[0]?.role;
+}
+
 /**
  * Requires the authenticated user to have the 'admin' role.
  * Must be used after requireAuth.
  */
 export function requireAdmin(req: Request, _res: Response, next: NextFunction): void {
-  const rows = query<{ role: string }>('SELECT role FROM users WHERE id = ?', [req.session.userId!]);
-  if (!rows[0] || rows[0].role !== 'admin') {
-    return next(createError('Forbidden: admin access required', 403));
-  }
+  if (roleOf(req) !== 'admin') return next(createError('Forbidden: admin access required', 403));
   next();
 }
 
+/** Requires one of the given roles. Must be used after requireAuth. */
+export function requireRole(...roles: readonly Role[]) {
+  return (req: Request, _res: Response, next: NextFunction): void => {
+    const role = roleOf(req);
+    if (!role || !(roles as readonly string[]).includes(role)) return next(createError('Forbidden', 403));
+    next();
+  };
+}
+
 /**
- * Rejects partner (monitor) users — they observe reports and never take
- * assessments. Must be used after requireAuth.
+ * Only facility-placed users (facility admins, staff) take assessments.
+ * Must be used after requireAuth.
  */
-export function denyMonitor(req: Request, _res: Response, next: NextFunction): void {
-  const rows = query<{ role: string }>('SELECT role FROM users WHERE id = ?', [req.session.userId!]);
-  if (rows[0]?.role === 'monitor') {
-    return next(createError('Partner users do not take assessments', 403));
+export function requireAssessmentTaker(req: Request, _res: Response, next: NextFunction): void {
+  if (!isFacilityRole(roleOf(req) ?? '')) {
+    return next(createError('Your role does not take assessments', 403));
   }
   next();
 }

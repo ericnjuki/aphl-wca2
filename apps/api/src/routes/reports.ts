@@ -19,7 +19,7 @@ import { SqlValue } from 'sql.js';
 import { query } from '../db/database';
 import { requireAuth, requirePasswordChanged } from '../middleware/auth';
 import { createError } from '../middleware/errorHandler';
-import { getScope, denyReason, Scope } from '../lib/report-scope';
+import { getScope, denyReason, isSummaryOnly, Scope } from '../lib/report-scope';
 
 const router = Router();
 router.use(requireAuth, requirePasswordChanged);
@@ -35,7 +35,7 @@ function parseFilters(req: Request, scope: Scope): CommonFilters {
   const domainCode = (req.query.domain_code as string | undefined) || null;
   const competencyValue = (req.query.competency_value as string | undefined) || null;
   const raw = req.query.approved_only;
-  const approvedOnly = scope.role === 'monitor' || raw === undefined || raw === '1' || raw === 'true';
+  const approvedOnly = isSummaryOnly(scope) || raw === undefined || raw === '1' || raw === 'true';
   return { domainCode, competencyValue, approvedOnly };
 }
 
@@ -116,7 +116,7 @@ type Suppression = 'small' | 'complementary';  // 'parent' is set by blankItems
 function suppressSmallGroups<T extends Record<string, unknown>>(
   scope: Scope, items: T[], distinct?: (hidden: number[]) => number,
 ): T[] {
-  if (scope.role !== 'monitor') return items;
+  if (!isSummaryOnly(scope)) return items;
   const count = (item: T) => Number(item.respondents ?? 0);
 
   const hidden = new Map<number, Suppression>();
@@ -151,7 +151,7 @@ function suppressSmallGroups<T extends Record<string, unknown>>(
 // get the average rounded to 2 decimals so response counts can't be recovered
 // from it.
 function viewAvg(scope: Scope, counts: { total: number; unassigned: number; avg: number | null }): number | null {
-  if (scope.role !== 'monitor') return counts.avg;
+  if (!isSummaryOnly(scope)) return counts.avg;
   if (counts.total > 0 && counts.total < MIN_GROUP_SIZE) return null;
   if (counts.unassigned > 0 && counts.unassigned < MIN_GROUP_SIZE) return null;
   return counts.avg === null ? null : Math.round(counts.avg * 100) / 100;
@@ -242,13 +242,13 @@ function placement(parts: [string, Placement][]): Placement {
 // has always counted district rows that way).
 function districtPlacement(scope: Scope, ref: string | DistrictRef, matchRegion = false): Placement {
   const parts: [string, Placement][] = [['uar.district_id =', refValue(ref, 'id')]];
-  if (matchRegion || scope.role === 'monitor') parts.push(['uar.region_id IS', refValue(ref, 'region_id')]);
+  if (matchRegion || isSummaryOnly(scope)) parts.push(['uar.region_id IS', refValue(ref, 'region_id')]);
   return placement(parts);
 }
 
 function facilityPlacement(scope: Scope, ref: string | FacilityRef): Placement {
   const parts: [string, Placement][] = [['uar.facility_id =', refValue(ref, 'id')]];
-  if (scope.role === 'monitor') {
+  if (isSummaryOnly(scope)) {
     parts.push(['uar.district_id IS', refValue(ref, 'district_id')]);
     parts.push(['uar.region_id IS', refValue(ref, 'region_id')]);
   }
@@ -282,7 +282,7 @@ function regionDistrictList(
      ORDER BY d.name`,
     [...dp.params, ...on.params, regionId],
   ));
-  if (scope.role !== 'monitor') return { items: rows, hiddenUndistricted: new Set(), anyPseudoHidden: false };
+  if (!isSummaryOnly(scope)) return { items: rows, hiddenUndistricted: new Set(), anyPseudoHidden: false };
 
   const fp = facilityPlacement(scope, 'fa');
   const undistricted = query<{ facility_id: number; respondents: number }>(
@@ -347,7 +347,7 @@ function districtFacilityList(
     [...fp.params, ...on.params, district.id],
   );
   const rows = withArchived(items);
-  if (scope.role !== 'monitor') return { items: rows, remainderHidden: false };
+  if (!isSummaryOnly(scope)) return { items: rows, remainderHidden: false };
 
   const remainderCond: Placement = {
     sql: `${dp.sql} AND NOT EXISTS (SELECT 1 FROM facilities fa WHERE fa.district_id = ? AND ${fp.sql})`,
@@ -392,7 +392,7 @@ function facilityDepartmentList(
      ORDER BY d.name`,
     [facility.id, ...fp.params, ...on.params],
   ));
-  if (scope.role !== 'monitor') return { items: rows, remainderHidden: false };
+  if (!isSummaryOnly(scope)) return { items: rows, remainderHidden: false };
 
   const remainderCond: Placement = {
     sql: `${fp.sql} AND NOT COALESCE(uar.department_id IN (${LISTED_DEPARTMENTS}), 0)`,
@@ -417,13 +417,14 @@ function facilityDepartmentList(
 // district is (recursive); an undistricted facility is hidden exactly when its
 // own pseudo-row in the region list is. Admins and staff are never affected.
 function isDistrictPrivacyHidden(scope: Scope, f: CommonFilters, district: DistrictRef): boolean {
-  if (scope.role !== 'monitor' || district.region_id === null) return false;
+  // Sub-county coordinators can't see the region list, so their district is their top level.
+  if (!isSummaryOnly(scope) || scope.role === 'subcounty' || district.region_id === null) return false;
   const row = regionDistrictList(scope, f, district.region_id).items.find((i) => i.district_id === district.id);
   return row?.suppressed !== undefined;
 }
 
 function isFacilityPrivacyHidden(scope: Scope, f: CommonFilters, facility: FacilityRef): boolean {
-  if (scope.role !== 'monitor') return false;
+  if (!isSummaryOnly(scope)) return false;
   if (facility.district_id === null) {
     return facility.region_id !== null && regionDistrictList(scope, f, facility.region_id).hiddenUndistricted.has(facility.id);
   }
