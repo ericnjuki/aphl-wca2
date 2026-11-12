@@ -1,32 +1,38 @@
 # Handoff
 
 <!-- Rules: ~/.claude/doc-system.md. Overwritten each session, never appended. ≤50 lines. -->
-_Updated: 2026-11-11_
+_Updated: 2026-11-12_
 
 ## Last session
 
-2026-11-12: role-model plan signed off (`plans/2026-11-12-role-model.md`); backend build started on
-branch `feat/role-model` (WIP commit, **does not type-check yet**). Session ended at the context limit.
+2026-11-12 (2nd): role-model Backend steps 4–7 and 9 done on `feat/role-model`; `pnpm -F api`
+type-checks. Ended at the context limit before step 8 and the tests.
 
 ## In progress
 
-`plans/2026-11-12-role-model.md`, Backend section. Done (WIP commit on `feat/role-model`):
-- `lib/roles.ts` (role codes + groups), migration 12 (`user_districts`, monitor→county).
-- `middleware/auth.ts`: `requireRole`, `requireAssessmentTaker` (`denyMonitor` removed; survey.ts uses it).
-- `lib/org.ts`: `getUserDistricts`; `withRegions` also returns `districts`/`district_ids`.
-- `lib/report-scope.ts` rewritten per role (+ `isSummaryOnly`, `districtIds`).
-- `routes/reports.ts`: monitor checks → `isSummaryOnly`; subcounty never district-privacy-hidden.
-Stopped before: Backend steps 4 (national per-county list suppression + remainder pseudo-row, not
-done), 5 reviews router, 6 users router (still references `monitor`), 7 workbook, 8 labels `/config`.
+`plans/2026-11-12-role-model.md`, Backend section. Done since the WIP commit:
+- 4: national list suppression + remainder pseudo-row (`routes/reports.ts`).
+- 5: `routes/reviews.ts` (mounted at `/admin/reviews`, same URLs): scoped by the submitter's
+  CURRENT facility; out-of-scope → 404; own submission → 403; new `GET /admin/reviews/:id`.
+- 6: users routes in `routes/admin.ts`: `validatePlacement` per role, `user_districts` writes,
+  facility-admin limits (`manageDeny`). Choices not in the plan, still to confirm with the user:
+  `facility_admin` needs a facility, staff facility stays optional, admin keeps its optional
+  placement, facility admins may also edit org role/title and cannot change their own role.
+- 7: workbook: `SYSTEM_ROLES` from `ROLES`, new optional `district_codes` column end to end.
+- 9: `/auth/me` already returns districts via `withRegions`.
+Stopped before: step 8 (labels env + `GET /api/v1/config`, workbook/API wording). API tests
+NOT run yet; the monitor-based suites will fail until rewritten.
 
 ## Next
 
-1. Finish Backend 4–8, fix `pnpm -F api` type check, rewrite monitor tests + new role tests.
-2. Web section of the plan, then type/build/tests; report done and ask before a live test pass.
-3. Email: separate plan after this (TODO.md).
+1. Backend 8 (labels config).
+2. `pnpm -F api test`: rewrite the monitor suites and add the new role tests (plan → Tests).
+3. Report the step-6 choices above to the user.
+4. Web section of the plan, then type/build/tests; report done and ask before a live test pass.
+5. Email: separate plan after this (TODO.md).
 
 ## Gotchas found this session
 
+- Repo files are CRLF: scripted string replacements must convert `\n` → `\r\n` (or use Edit).
 - Git Bash mangles `/wca`-style args (docker `-e`, curl `-w`): `export MSYS_NO_PATHCONV=1`.
-- PowerShell → ssh: send multi-line scripts base64-encoded (`echo <b64> | base64 -d | bash`);
-  piping stdin adds a BOM + CRLF, and inner double quotes get stripped.
+- PowerShell → ssh: send multi-line scripts base64-encoded (`echo <b64> | base64 -d | bash`).

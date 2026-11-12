@@ -100,7 +100,10 @@ function removeEntity(tab: OrgTab, op: OrgOp): void {
   }
   // Delete: no history, so only links and (disabled) users can still point here.
   if (tab === TAB.regions) execute('DELETE FROM user_regions WHERE region_id = ?', [id]);
-  if (tab === TAB.districts) execute('UPDATE facilities SET district_id = NULL WHERE district_id = ?', [id]);
+  if (tab === TAB.districts) {
+    execute('DELETE FROM user_districts WHERE district_id = ?', [id]);
+    execute('UPDATE facilities SET district_id = NULL WHERE district_id = ?', [id]);
+  }
   if (tab === TAB.departments) {
     execute('DELETE FROM facility_departments WHERE department_id = ?', [id]);
     execute('UPDATE users SET department_id = NULL WHERE department_id = ?', [id]);
@@ -121,10 +124,14 @@ const IMPORT_TEMP_BCRYPT_COST = 10;
 interface Secret { temp: string; hash: string }
 interface PreparedUser extends Secret { op: UserOp; username: string }
 
-function setRegions(userId: number, codes: string): void {
+function setOrgUnits(userId: number, regionCodes: string, districtCodes: string): void {
   execute('DELETE FROM user_regions WHERE user_id = ?', [userId]);
-  for (const code of splitList(codes)) {
+  for (const code of splitList(regionCodes)) {
     execute('INSERT INTO user_regions (user_id, region_id) VALUES (?, ?)', [userId, idByCode('regions', code)]);
+  }
+  execute('DELETE FROM user_districts WHERE user_id = ?', [userId]);
+  for (const code of splitList(districtCodes)) {
+    execute('INSERT INTO user_districts (user_id, district_id) VALUES (?, ?)', [userId, idByCode('districts', code)]);
   }
 }
 
@@ -162,7 +169,7 @@ function writeUser(op: UserOp, prepared: PreparedUser | undefined): void {
       [v.first_name, v.last_name, v.national_id, v.id_type, v.system_role, enabled, ...placement, userId],
     );
   }
-  setRegions(userId, v.region_codes);
+  setOrgUnits(userId, v.region_codes, v.district_codes);
 }
 
 // ── Apply ─────────────────────────────────────────────────────────────────────
