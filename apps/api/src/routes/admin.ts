@@ -2,12 +2,15 @@ import { Router, Request, Response, NextFunction } from 'express';
 import bcrypt from 'bcryptjs';
 import { SqlValue } from 'sql.js';
 import { query, execute, transaction } from '../db/database';
-import { requireAuth, requirePasswordChanged, requireAdmin } from '../middleware/auth';
+import { requireAuth, requirePasswordChanged, requireAdmin, requireRole } from '../middleware/auth';
+import { getScope } from '../lib/report-scope';
+import { ROLES, FACILITY_ROLES, USER_MANAGER_ROLES, isRole, isFacilityRole, type Role } from '../lib/roles';
 import { createError } from '../middleware/errorHandler';
 import districtsRouter from './admin-districts';
 import { resolveDistrict, backfillResponseDistrict, withRegions } from '../lib/org';
 import { generateTempPassword, generateUsername } from '../lib/credentials';
 import setupRouter from './admin-setup';
+import reviewsRouter from './reviews';
 import { assertNoHistory, type HistoryTable } from '../lib/history';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -282,57 +285,120 @@ function sanitiseUser(u: UserRow & Record<string, unknown>) {
   return withRegions({ ...safe, id: u.id, is_first_login: Boolean(u.is_first_login), is_enabled: Boolean(u.is_enabled) });
 }
 
-// ── Partner (monitor) placement ───────────────────────────────────────────────
-// Monitors have no facility placement; they see reports for the regions in
-// user_regions. Only monitors may have rows there (FKs aren't enforced).
+// ── Placement per role (plans/2026-11-12-role-model.md) ───────────────────────
+//   admin           optional facility placement (unchanged), no county/sub-county
+//   national        no placement at all
+//   county          exactly one region (user_regions), no facility placement
+//   subcounty       exactly one district (user_districts), no facility placement
+//   facility_admin  a facility (required) and optional department/org role/title
+//   staff           optional facility/department/org role/title
+// FKs aren't enforced, so only county/subcounty users may have rows in
+// user_regions / user_districts.
 
-type Placement = { facility_id: unknown; department_id: unknown; org_role_id: unknown; title_id: unknown };
+type FacilityFields = { facility_id: unknown; department_id: unknown; org_role_id: unknown; title_id: unknown };
 
-const USER_ROLES = ['staff', 'admin', 'monitor'];
-const ROLE_ERROR = 'role must be one of: staff, admin, monitor';
+const ROLE_ERROR = `role must be one of: ${ROLES.join(', ')}`;
+const NO_FACILITY_ROLES: readonly Role[] = ['national', 'county', 'subcounty'];
+
+function idList(raw: unknown, name: string): number[] | { error: string } {
+  const ids = raw ?? [];
+  if (!Array.isArray(ids) || !ids.every((v) => Number.isInteger(v)))
+    return { error: `${name} must be an array of ids` };
+  return [...new Set(ids as number[])];
+}
 
 function validatePlacement(
-  role: string, placement: Placement, rawRegionIds: unknown,
-): { regionIds: number[] } | { error: string } {
-  const ids = rawRegionIds ?? [];
-  if (!Array.isArray(ids) || !ids.every((v) => Number.isInteger(v)))
-    return { error: 'region_ids must be an array of region ids' };
-  if (role !== 'monitor')
-    return ids.length > 0 ? { error: 'Only partner (monitor) users can be assigned regions' } : { regionIds: [] };
-  if (Object.values(placement).some((v) => v != null))
-    return { error: 'Partner (monitor) users cannot have a facility, department, org role or title' };
-  const unique = [...new Set(ids as number[])];
-  if (unique.length === 0) return { error: 'Partner (monitor) users need at least one region' };
-  const found = query<{ id: number }>(
-    `SELECT id FROM regions WHERE id IN (${unique.map(() => '?').join(',')})`, unique,
-  );
-  if (found.length !== unique.length) return { error: 'Unknown region in region_ids' };
-  return { regionIds: unique };
-}
+  role: Role, fields: FacilityFields, rawRegionIds: unknown, rawDistrictIds: unknown,
+): { regionIds: number[]; districtIds: number[] } | { error: string } {
+  const regionIds = idList(rawRegionIds, 'region_ids');
+  if ('error' in regionIds) return regionIds;
+  const districtIds = idList(rawDistrictIds, 'district_ids');
+  if ('error' in districtIds) return districtIds;
 
-function setUserRegions(userId: number, regionIds: number[]): void {
-  execute('DELETE FROM user_regions WHERE user_id = ?', [userId]);
-  for (const rid of regionIds) {
-    execute('INSERT INTO user_regions (user_id, region_id) VALUES (?, ?)', [userId, rid]);
+  if (role !== 'county' && regionIds.length > 0)
+    return { error: 'Only county coordinators can be assigned a county (region_ids)' };
+  if (role !== 'subcounty' && districtIds.length > 0)
+    return { error: 'Only sub-county coordinators can be assigned a sub-county (district_ids)' };
+  if (NO_FACILITY_ROLES.includes(role) && Object.values(fields).some((v) => v != null))
+    return { error: 'National, county and sub-county users cannot have a facility, department, org role or title' };
+  if (role === 'facility_admin' && fields.facility_id == null)
+    return { error: 'Facility admins need a facility' };
+
+  if (role === 'county') {
+    if (regionIds.length !== 1) return { error: 'County coordinators need exactly one county (region_ids)' };
+    if (!query('SELECT id FROM regions WHERE id = ?', [regionIds[0]]).length) return { error: 'Unknown region in region_ids' };
   }
+  if (role === 'subcounty') {
+    if (districtIds.length !== 1) return { error: 'Sub-county coordinators need exactly one sub-county (district_ids)' };
+    if (!query('SELECT id FROM districts WHERE id = ?', [districtIds[0]]).length) return { error: 'Unknown district in district_ids' };
+  }
+  return { regionIds, districtIds };
 }
 
-usersRouter.get('/', requireAdmin, (_req, res: Response, next: NextFunction) => {
+function setUserOrgUnits(userId: number, regionIds: number[], districtIds: number[]): void {
+  execute('DELETE FROM user_regions WHERE user_id = ?', [userId]);
+  for (const rid of regionIds) execute('INSERT INTO user_regions (user_id, region_id) VALUES (?, ?)', [userId, rid]);
+  execute('DELETE FROM user_districts WHERE user_id = ?', [userId]);
+  for (const did of districtIds) execute('INSERT INTO user_districts (user_id, district_id) VALUES (?, ?)', [userId, did]);
+}
+
+// ── Facility-admin limits ────────────────────────────────────────────────────
+// Facility admins manage facility-role users (staff, facility admins) in their
+// own facility only. They cannot move a user to another facility, give any
+// other role, enable/disable a user, or change their own role. Everything else
+// (admin, national, county, subcounty) is created by admin only.
+
+interface Caller { id: number; role: Role; facilityId: number | null }
+
+function caller(req: Request): Caller {
+  const s = getScope(req.session.userId!);
+  return { id: s.userId, role: s.role, facilityId: s.facilityId };
+}
+
+/** Null if the caller may manage `target`, else a 404/403-worthy reason. */
+function manageDeny(c: Caller, target: { role: string; facility_id: number | null }): string | null {
+  if (c.role === 'admin') return null;
+  if (c.facilityId == null || target.facility_id !== c.facilityId || !isFacilityRole(target.role))
+    return 'Facility admins may only manage staff and facility admins in their facility';
+  return null;
+}
+
+const FACILITY_ADMIN_ROLE_ERROR = 'Facility admins may only give the staff or facility admin role';
+
+usersRouter.use(requireRole(...USER_MANAGER_ROLES));
+
+usersRouter.get('/', (req: Request, res: Response, next: NextFunction) => {
   try {
-    const users = query<UserRow & Record<string, unknown>>(`${USER_SELECT} ORDER BY u.last_name, u.first_name`);
+    const c = caller(req);
+    const users = c.role === 'admin'
+      ? query<UserRow & Record<string, unknown>>(`${USER_SELECT} ORDER BY u.last_name, u.first_name`)
+      : query<UserRow & Record<string, unknown>>(
+          `${USER_SELECT} WHERE u.facility_id = ? AND u.role IN (${FACILITY_ROLES.map(() => '?').join(',')})
+           ORDER BY u.last_name, u.first_name`,
+          [c.facilityId, ...FACILITY_ROLES],
+        );
     res.json({ users: users.map(sanitiseUser) });
   } catch (err) { next(err); }
 });
 
-usersRouter.post('/', requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
+usersRouter.post('/', async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const c = caller(req);
+    const body = req.body as Partial<UserRow> & { region_ids?: unknown; district_ids?: unknown };
     const { first_name, last_name, national_id, id_type, email,
-            facility_id, department_id, org_role_id, title_id, role = 'staff' } = req.body as Partial<UserRow>;
+            department_id, org_role_id, title_id, role = 'staff' } = body;
+    let { facility_id } = body;
     if (!first_name || !last_name || !national_id || !id_type || !email)
       return next(createError('first_name, last_name, national_id, id_type, email are required', 400));
-    if (!USER_ROLES.includes(role)) return next(createError(ROLE_ERROR, 400));
+    if (!isRole(role)) return next(createError(ROLE_ERROR, 400));
+    if (c.role === 'facility_admin') {
+      if (!isFacilityRole(role)) return next(createError(FACILITY_ADMIN_ROLE_ERROR, 403));
+      if (facility_id != null && facility_id !== c.facilityId)
+        return next(createError('Facility admins may only add users to their own facility', 403));
+      facility_id = c.facilityId;
+    }
     const placement = validatePlacement(
-      role, { facility_id, department_id, org_role_id, title_id }, (req.body as { region_ids?: unknown }).region_ids,
+      role, { facility_id, department_id, org_role_id, title_id }, body.region_ids, body.district_ids,
     );
     if ('error' in placement) return next(createError(placement.error, 400));
     const user_name = generateUsername(first_name, last_name);
@@ -348,7 +414,7 @@ usersRouter.post('/', requireAdmin, async (req: Request, res: Response, next: Ne
            role, facility_id ?? null, department_id ?? null, org_role_id ?? null, title_id ?? null, temp],
         );
         const [created] = query<{ id: number }>('SELECT id FROM users WHERE email = ?', [email]);
-        setUserRegions(created.id, placement.regionIds);
+        setUserOrgUnits(created.id, placement.regionIds, placement.districtIds);
       });
     } catch (e: unknown) {
       if (e instanceof Error && e.message.includes('UNIQUE'))
@@ -360,26 +426,36 @@ usersRouter.post('/', requireAdmin, async (req: Request, res: Response, next: Ne
   } catch (err) { next(err); }
 });
 
-usersRouter.put('/:id', requireAdmin, (req: Request, res: Response, next: NextFunction) => {
+usersRouter.put('/:id', (req: Request, res: Response, next: NextFunction) => {
   try {
+    const c = caller(req);
     const id = Number(req.params.id);
     const [existing] = query<UserRow>('SELECT * FROM users WHERE id = ?', [id]);
     if (!existing) return next(createError('User not found', 404));
+    const deny = manageDeny(c, existing);
+    if (deny) return next(createError(deny, 403));
+    const body = req.body as Partial<UserRow> & { region_ids?: unknown; district_ids?: unknown };
     const {
       first_name = existing.first_name, last_name = existing.last_name,
       email = existing.email, role = existing.role,
       facility_id = existing.facility_id, department_id = existing.department_id,
       org_role_id = existing.org_role_id, title_id = existing.title_id,
       is_enabled = existing.is_enabled,
-    } = req.body as Partial<UserRow>;
-    // Omitted region_ids keep the current assignment while the user stays a monitor.
-    const sentRegionIds = (req.body as { region_ids?: unknown }).region_ids;
-    const regionInput = sentRegionIds !== undefined ? sentRegionIds
-      : role === 'monitor'
-        ? query<{ region_id: number }>('SELECT region_id FROM user_regions WHERE user_id = ?', [id]).map((r) => r.region_id)
-        : [];
-    if (!USER_ROLES.includes(role)) return next(createError(ROLE_ERROR, 400));
-    const placement = validatePlacement(role, { facility_id, department_id, org_role_id, title_id }, regionInput);
+    } = body;
+    if (!isRole(role)) return next(createError(ROLE_ERROR, 400));
+    if (c.role === 'facility_admin') {
+      if (!isFacilityRole(role)) return next(createError(FACILITY_ADMIN_ROLE_ERROR, 403));
+      if (id === c.id && role !== existing.role) return next(createError('You cannot change your own role', 403));
+      if (facility_id !== existing.facility_id) return next(createError('Only an admin can move a user to another facility', 403));
+      if (Boolean(is_enabled) !== Boolean(existing.is_enabled)) return next(createError('Only an admin can enable or disable users', 403));
+    }
+    // Omitted region_ids / district_ids keep the current assignment while the role keeps using it.
+    const current = (sql: string) => query<{ v: number }>(sql, [id]).map((r) => r.v);
+    const regionInput = body.region_ids !== undefined ? body.region_ids
+      : role === 'county' ? current('SELECT region_id AS v FROM user_regions WHERE user_id = ?') : [];
+    const districtInput = body.district_ids !== undefined ? body.district_ids
+      : role === 'subcounty' ? current('SELECT district_id AS v FROM user_districts WHERE user_id = ?') : [];
+    const placement = validatePlacement(role, { facility_id, department_id, org_role_id, title_id }, regionInput, districtInput);
     if ('error' in placement) return next(createError(placement.error, 400));
     try {
       transaction(() => {
@@ -391,7 +467,7 @@ usersRouter.put('/:id', requireAdmin, (req: Request, res: Response, next: NextFu
            facility_id ?? null, department_id ?? null, org_role_id ?? null, title_id ?? null,
            is_enabled ? 1 : 0, id],
         );
-        setUserRegions(id, placement.regionIds);
+        setUserOrgUnits(id, placement.regionIds, placement.districtIds);
       });
     } catch (e: unknown) {
       if (e instanceof Error && e.message.includes('UNIQUE'))
@@ -403,11 +479,13 @@ usersRouter.put('/:id', requireAdmin, (req: Request, res: Response, next: NextFu
   } catch (err) { next(err); }
 });
 
-usersRouter.post('/:id/reset-password', requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
+usersRouter.post('/:id/reset-password', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const id = Number(req.params.id);
-    const [existing] = query<UserRow>('SELECT id FROM users WHERE id = ?', [id]);
+    const [existing] = query<UserRow>('SELECT id, role, facility_id FROM users WHERE id = ?', [id]);
     if (!existing) return next(createError('User not found', 404));
+    const deny = manageDeny(caller(req), existing);
+    if (deny) return next(createError(deny, 403));
     const temp = generateTempPassword();
     const hashed = await bcrypt.hash(temp, 12);
     execute(
@@ -428,102 +506,6 @@ router.use('/org-roles',   orgRolesRouter);
 router.use('/user-titles', userTitlesRouter);
 router.use('/users',       usersRouter);
 router.use('/setup',       setupRouter);
-
-// ── Reviews (admin-only approval queue for completed submissions) ────────────
-
-interface ReviewListRow extends Record<string, unknown> {
-  id: number;
-  user_id: number;
-  full_name: string;
-  facility_name: string | null;
-  department_name: string | null;
-  domain_code: string;
-  domain_name: string;
-  avg_level: number | null;
-  completed_at: string | null;
-  review_status: 'pending' | 'approved' | 'rejected';
-}
-
-router.get('/reviews', requireAdmin, (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const status = (req.query.status as string | undefined) ?? 'pending';
-    if (!['pending', 'approved', 'rejected', 'all'].includes(status)) {
-      return next(createError('Invalid status filter', 400));
-    }
-    const limit  = Math.min(Number(req.query.limit ?? 100), 500);
-    const offset = Math.max(Number(req.query.offset ?? 0), 0);
-
-    const whereParts: string[] = ["ua.status = 'completed'"];
-    const params: (string | number)[] = [];
-    if (status !== 'all') { whereParts.push('ua.review_status = ?'); params.push(status); }
-
-    const rows = query<ReviewListRow>(
-      `SELECT ua.id, ua.user_id,
-              (u.first_name || ' ' || u.last_name) AS full_name,
-              f.name AS facility_name, d.name AS department_name,
-              ua.domain_code, ua.domain_name, ua.completed_at, ua.review_status,
-              (SELECT AVG(CASE WHEN r.response_level > 0 THEN r.response_level END)
-                 FROM user_assessment_responses r
-                WHERE r.user_assessment_id = ua.id) AS avg_level
-       FROM user_assessments ua
-       INNER JOIN users u ON u.id = ua.user_id
-       LEFT JOIN facilities  f ON f.id = u.facility_id
-       LEFT JOIN departments d ON d.id = u.department_id
-       WHERE ${whereParts.join(' AND ')}
-       ORDER BY ua.completed_at DESC
-       LIMIT ? OFFSET ?`,
-      [...params, limit, offset],
-    );
-
-    res.json({ reviews: rows });
-  } catch (err) { next(err); }
-});
-
-router.post('/reviews/:id/approve', requireAdmin, (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const id = Number(req.params.id);
-    const { notes } = req.body as { notes?: string | null };
-    const [existing] = query<{ id: number }>(
-      "SELECT id FROM user_assessments WHERE id = ? AND status = 'completed'",
-      [id],
-    );
-    if (!existing) return next(createError('Submission not found', 404));
-    execute(
-      `UPDATE user_assessments
-       SET review_status = 'approved',
-           reviewed_by   = ?,
-           reviewed_at   = datetime('now'),
-           review_notes  = ?
-       WHERE id = ?`,
-      [req.session.userId!, notes ?? null, id],
-    );
-    res.json({ ok: true });
-  } catch (err) { next(err); }
-});
-
-router.post('/reviews/:id/reject', requireAdmin, (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const id = Number(req.params.id);
-    const { notes } = req.body as { notes?: string };
-    if (!notes || !notes.trim()) {
-      return next(createError('Rejection notes are required', 400));
-    }
-    const [existing] = query<{ id: number }>(
-      "SELECT id FROM user_assessments WHERE id = ? AND status = 'completed'",
-      [id],
-    );
-    if (!existing) return next(createError('Submission not found', 404));
-    execute(
-      `UPDATE user_assessments
-       SET review_status = 'rejected',
-           reviewed_by   = ?,
-           reviewed_at   = datetime('now'),
-           review_notes  = ?
-       WHERE id = ?`,
-      [req.session.userId!, notes.trim(), id],
-    );
-    res.json({ ok: true });
-  } catch (err) { next(err); }
-});
+router.use('/reviews',     reviewsRouter);
 
 export default router;

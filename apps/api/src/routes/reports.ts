@@ -4,7 +4,7 @@
 //   domain_code?       filter to one competency domain (e.g. "LAB-SAFETY")
 //   competency_value?  filter to one competency within that domain
 //   approved_only?     default true — exclude rejected/pending submissions;
-//                      always true for partner (monitor) users
+//                      always true for summary-only roles (national/county/subcounty)
 //
 // Response envelope:
 //   { level, items, meta: { total_respondents, unassigned_respondents, avg_level, generated_at, filters } }
@@ -92,7 +92,7 @@ const COUNTS_SELECT = `
   SUM(CASE WHEN uar.response_level = 4 THEN 1 ELSE 0 END)                 AS count_expert
 `;
 
-// Partner (monitor) users see aggregates only. A bucket built from fewer than
+// Summary-only roles (national, county, subcounty) see aggregates only. A bucket built from fewer than
 // MIN_GROUP_SIZE people would expose those people's results, so its counts
 // are blanked and the row is flagged `suppressed: 'small'`. Empty buckets are
 // left as-is.
@@ -461,20 +461,41 @@ router.get('/national', (req: Request, res: Response, next: NextFunction) => {
     const f = parseFilters(req, scope);
     const on = uarOnFilters(f);
 
-    const items = query(
+    const rows = withArchived(query(
       `SELECT r.id AS region_id, r.name AS region_name, r.archived_at, ${COUNTS_SELECT}
        FROM regions r
        LEFT JOIN user_assessment_responses uar ON uar.region_id = r.id${on.sql}
        GROUP BY r.id, r.name, r.archived_at
        ORDER BY r.name`,
       on.params,
-    );
+    ));
 
     const w = responseWhere(f);
     // At national level, "unassigned" = no region_id → not in any regional bucket.
     const counts = respondentCounts(w.sql, w.params, f, 'region_id');
 
-    res.json({ level: 'national', items: withArchived(items), meta: meta(f, counts.total, counts.unassigned, viewAvg(scope, counts)) });
+    if (!isSummaryOnly(scope)) {
+      return res.json({ level: 'national', items: rows, meta: meta(f, counts.total, counts.unassigned, viewAvg(scope, counts)) });
+    }
+
+    // Summary-only: respondents in no region row (no region, or a region that
+    // isn't listed) form ONE remainder pseudo-row. It takes part in
+    // small/complementary decisions so `national total - visible rows` can't
+    // expose a 1-2 person row; it is never added to items.
+    const remainderCond: Placement = {
+      sql: `NOT COALESCE(uar.region_id IN (${rows.map(() => '?').join(',') || 'NULL'}), 0)`,
+      params: rows.map((r) => Number(r.region_id)),
+    };
+    const rw = responseWhere(f, remainderCond);
+    const remainder = respondentCounts(rw.sql, rw.params, f, 'region_id').total;
+    const conds = [
+      ...rows.map((r) => ({ sql: 'uar.region_id = ?', params: [Number(r.region_id)] as SqlValue[] })),
+      remainderCond,
+    ];
+    const all = suppressSmallGroups(scope, [...rows, { respondents: remainder } as Record<string, unknown>], distinctAcross(f, conds));
+    const remainderHidden = all[all.length - 1].suppressed !== undefined;
+
+    res.json({ level: 'national', items: all.slice(0, -1), meta: meta(f, counts.total, remainderHidden ? 0 : counts.unassigned, viewAvg(scope, counts)) });
   } catch (err) { next(err); }
 });
 
@@ -581,7 +602,7 @@ router.get('/facilities/:facilityId', (req: Request, res: Response, next: NextFu
 
 // ── GET /reports/departments/:departmentId ────────────────────────────────
 // Departments are shared across facilities, so the grid is narrowed to one
-// facility via ?facility_id=. Staff are always pinned to their own facility;
+// facility via ?facility_id=. Facility admins are always pinned to their own facility;
 // admins without facility_id get the cross-facility view.
 router.get('/departments/:departmentId', (req: Request, res: Response, next: NextFunction) => {
   try {
