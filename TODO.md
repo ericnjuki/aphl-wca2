@@ -4,6 +4,9 @@
 
 ## Now
 
+- (2026-11-12) Role model rework: plan `plans/2026-11-12-role-model.md` (draft, awaiting sign-off).
+- (2026-11-12) Email for account-created / password-reset (no mail code exists yet). Separate plan after the
+  role model. Open: which SMTP/provider (NPHL relay, M365, Brevo/SendGrid?) and whether to mail on create too.
 
 ## Later
 
