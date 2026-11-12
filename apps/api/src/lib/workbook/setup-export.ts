@@ -19,9 +19,9 @@ const README: [string, string][] = [
   ['Matching', 'Rows are matched by code (email for users), ignoring upper/lower case. To rename something, keep its code and change the name. Changing a code removes the old item and adds a new one.'],
   ['Full sync', 'Every tab you include is the complete list. Items missing from a tab are archived (if they have history) or deleted; users missing from Users are disabled. Delete a whole tab to leave that kind of data unchanged.'],
   ['Your account', 'Keep your own admin account on the Users tab — the import will not disable or demote you.'],
-  ['Lists', 'department_codes and region_codes take several codes separated by ";".'],
-  ['Allowed values', 'id_type: NRC, Passport, Other · system_role: staff, admin, monitor (default staff) · status: active, disabled (default active).'],
-  ['Partners', 'monitor users need region_codes and no facility, department, org role or title. Other users must not have region_codes.'],
+  ['Lists', 'department_codes takes several codes separated by ";".'],
+  ['Allowed values', `id_type: NRC, Passport, Other · system_role: ${SYSTEM_ROLES.join(', ')} (default staff) · status: active, disabled (default active).`],
+  ['Coordinators', 'county users need exactly one region code in region_codes; subcounty users exactly one district code in district_codes. national, county and subcounty users have no facility, department, org role or title. facility_admin users need a facility_code. Other users leave region_codes and district_codes empty.'],
   ['Departments', "A user's department_code must be one of their facility's department_codes."],
   ['username', 'Shown for reference and ignored on import. New users get a generated username and temporary password, shown once after the import.'],
 ];
@@ -47,7 +47,7 @@ export async function writeSetupWorkbook(snap: SetupSnapshot): Promise<Buffer> {
     spec(TAB.users),
     snap.users.map((u) => [
       u.email, u.firstName, u.lastName, u.nationalId, u.idType, u.role, u.facilityCode, u.departmentCode,
-      u.orgRoleCode, u.titleCode, u.regionCodes.join(';'), u.enabled ? 'active' : 'disabled', u.userName,
+      u.orgRoleCode, u.titleCode, u.regionCodes.join(';'), u.districtCodes.join(';'), u.enabled ? 'active' : 'disabled', u.userName,
     ]),
     { readOnly: [USERNAME_COLUMN], lists: { id_type: ID_TYPES, system_role: SYSTEM_ROLES, status: STATUSES } },
   );

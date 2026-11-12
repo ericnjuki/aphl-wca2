@@ -2,6 +2,7 @@
 // allowed values. Spec: docs/superpowers/specs/2026-10-06-workbook-import-design.md §1.
 
 import { loadWorkbook } from './xlsx';
+import { ROLES, type Role } from '../roles';
 import { ParsedTab, TabSpec, readTabs, req, opt } from './reader';
 
 export const TAB = {
@@ -19,12 +20,13 @@ export const README_TAB = 'Read me';
 export const USERNAME_COLUMN = 'username';
 
 export const ID_TYPES = ['NRC', 'Passport', 'Other'] as const;
-export const SYSTEM_ROLES = ['staff', 'admin', 'monitor'] as const;
+// Default first, then the rest of the role model (lib/roles.ts).
+export const SYSTEM_ROLES = ['staff', ...ROLES.filter((r) => r !== 'staff')] as readonly Role[];
 export const STATUSES = ['active', 'disabled'] as const;
 
 export const USERS_COLUMNS = [
   'email', 'first_name', 'last_name', 'national_id', 'id_type', 'system_role', 'facility_code',
-  'department_code', 'org_role_code', 'title_code', 'region_codes', 'status',
+  'department_code', 'org_role_code', 'title_code', 'region_codes', 'district_codes', 'status',
 ];
 const USERS_REQUIRED = new Set(['email', 'first_name', 'last_name', 'national_id', 'id_type']);
 

@@ -11,7 +11,7 @@ export interface SnapFacility extends SnapEntity { facilityType: string; distric
 export interface SnapUser {
   id: number; email: string; userName: string; firstName: string; lastName: string;
   nationalId: string; idType: string; role: string; enabled: boolean;
-  facilityCode: string; departmentCode: string; orgRoleCode: string; titleCode: string; regionCodes: string[];
+  facilityCode: string; departmentCode: string; orgRoleCode: string; titleCode: string; regionCodes: string[]; districtCodes: string[];
 }
 export interface SetupSnapshot {
   regions: SnapEntity[];
@@ -95,6 +95,9 @@ export function loadSetupSnapshot(): SetupSnapshot {
   const userRegions = groupCodes(query<{ owner: number; code: string }>(
     'SELECT ur.user_id AS owner, rg.code FROM user_regions ur JOIN regions rg ON rg.id = ur.region_id',
   ));
+  const userDistricts = groupCodes(query<{ owner: number; code: string }>(
+    'SELECT ud.user_id AS owner, d.code FROM user_districts ud JOIN districts d ON d.id = ud.district_id',
+  ));
   const users = query<{
     id: number; email: string; user_name: string; first_name: string; last_name: string;
     national_id: string; id_type: string; role: string; is_enabled: number;
@@ -123,6 +126,7 @@ export function loadSetupSnapshot(): SetupSnapshot {
     orgRoleCode: up(u.org_role_code),
     titleCode: up(u.title_code),
     regionCodes: userRegions.get(u.id) ?? [],
+    districtCodes: userDistricts.get(u.id) ?? [],
   }));
 
   return { regions, districts, departments, facilities, orgRoles, titles, users };

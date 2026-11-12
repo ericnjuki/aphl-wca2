@@ -14,7 +14,7 @@ import {
 
 export const USER_FIELDS = [
   'first_name', 'last_name', 'national_id', 'id_type', 'system_role', 'facility_code',
-  'department_code', 'org_role_code', 'title_code', 'region_codes', 'status',
+  'department_code', 'org_role_code', 'title_code', 'region_codes', 'district_codes', 'status',
 ] as const;
 export type UserField = typeof USER_FIELDS[number];
 export type UserValues = Record<UserField, string> & { email: string };
@@ -40,6 +40,7 @@ function snapValues(u: SnapUser): UserValues {
     org_role_code: u.orgRoleCode,
     title_code: u.titleCode,
     region_codes: u.regionCodes.join(';'),
+    district_codes: u.districtCodes.join(';'),
     status: u.enabled ? 'active' : 'disabled',
   };
 }
@@ -55,6 +56,7 @@ function toState(v: UserValues, fromWorkbook: boolean): UserState {
     orgRole: v.org_role_code,
     title: v.title_code,
     regions: splitList(v.region_codes),
+    districts: splitList(v.district_codes),
   };
 }
 
@@ -90,6 +92,7 @@ function normalise(raw: Record<string, string>, prev: SnapUser | undefined): { v
       org_role_code: canonical('org_role_code', raw.org_role_code),
       title_code: canonical('title_code', raw.title_code),
       region_codes: canonical('region_codes', raw.region_codes),
+      district_codes: canonical('district_codes', raw.district_codes ?? ''),
     },
   };
 }
@@ -105,22 +108,34 @@ function checkUser(v: UserValues, org: OrgState): Problem[] {
     if (!ok) out.push({ column, message: refError(column, code, tab, org) });
   };
 
-  if (v.system_role === 'monitor') {
-    if (!v.region_codes) {
-      out.push({ column: 'region_codes', message: 'A partner (monitor) user needs at least one region in region_codes' });
-    }
-    if (v.facility_code || v.department_code || v.org_role_code || v.title_code) {
-      out.push({ column: null, message: 'Partner (monitor) users cannot have a facility, department, org role or title' });
-    }
-  } else if (v.region_codes) {
-    out.push({ column: 'region_codes', message: 'Only partner (monitor) users can have region_codes' });
+  // Placement per role (plans/2026-11-12-role-model.md).
+  const role = v.system_role;
+  const regions = splitList(v.region_codes);
+  const districts = splitList(v.district_codes);
+  if (role === 'county' && regions.length !== 1) {
+    out.push({ column: 'region_codes', message: 'A county user needs exactly one region code in region_codes' });
+  } else if (role !== 'county' && regions.length) {
+    out.push({ column: 'region_codes', message: 'Only county users can have region_codes' });
+  }
+  if (role === 'subcounty' && districts.length !== 1) {
+    out.push({ column: 'district_codes', message: 'A subcounty user needs exactly one district code in district_codes' });
+  } else if (role !== 'subcounty' && districts.length) {
+    out.push({ column: 'district_codes', message: 'Only subcounty users can have district_codes' });
+  }
+  if (['national', 'county', 'subcounty'].includes(role)
+      && (v.facility_code || v.department_code || v.org_role_code || v.title_code)) {
+    out.push({ column: null, message: 'National, county and subcounty users cannot have a facility, department, org role or title' });
+  }
+  if (role === 'facility_admin' && !v.facility_code) {
+    out.push({ column: 'facility_code', message: 'A facility_admin user needs a facility_code' });
   }
 
   ref('facility_code', v.facility_code, TAB.facilities);
   ref('department_code', v.department_code, TAB.departments);
   ref('org_role_code', v.org_role_code, TAB.orgRoles);
   ref('title_code', v.title_code, TAB.titles);
-  for (const code of splitList(v.region_codes)) ref('region_codes', code, TAB.regions);
+  for (const code of regions) ref('region_codes', code, TAB.regions);
+  for (const code of districts) ref('district_codes', code, TAB.districts);
 
   // Disabled users keep their history, so their department is not re-validated against the facility.
   if (v.department_code && !disabled) {

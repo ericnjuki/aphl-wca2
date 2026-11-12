@@ -45,6 +45,7 @@ export interface UserState {
   orgRole: string;
   title: string;
   regions: string[];
+  districts: string[];
 }
 
 interface OrgTabConfig { keyCol: string; fields: string[]; label: string }
@@ -65,7 +66,7 @@ export const MAJORITY_WARNING = 'this usually means the wrong file';
 // ── Canonical values ──────────────────────────────────────────────────────────
 
 const CODE_FIELDS = new Set(['region_code', 'district_code', 'facility_code', 'department_code', 'org_role_code', 'title_code']);
-const LIST_FIELDS = new Set(['department_codes', 'region_codes']);
+const LIST_FIELDS = new Set(['department_codes', 'region_codes', 'district_codes']);
 
 /** Codes upper-case; lists de-duplicated, sorted and joined with ';'. */
 export function canonical(field: string, raw: string): string {
@@ -254,7 +255,7 @@ const ORG_REFERRERS: Partial<Record<OrgTab, { from: OrgTab; uses: (e: StateEntry
 
 const USER_USES: Record<OrgTab, (u: UserState, code: string) => boolean> = {
   [TAB.regions]: (u, c) => u.regions.includes(c),
-  [TAB.districts]: () => false,
+  [TAB.districts]: (u, c) => u.districts.includes(c),
   [TAB.departments]: (u, c) => u.department === c,
   [TAB.facilities]: (u, c) => u.facility === c,
   [TAB.orgRoles]: (u, c) => u.orgRole === c,
@@ -299,5 +300,6 @@ export function usersFromSnapshot(snap: SetupSnapshot): Map<string, UserState> {
     orgRole: u.orgRoleCode,
     title: u.titleCode,
     regions: u.regionCodes,
+    districts: u.districtCodes,
   }]));
 }
