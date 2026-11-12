@@ -6,6 +6,7 @@ import { ParsedTab, splitList } from './reader';
 import { TabPlan, newTab, diffFields } from './plan';
 import { TAB, ID_TYPES, SYSTEM_ROLES, STATUSES } from './setup-format';
 import { SetupSnapshot, SnapUser } from './setup-snapshot';
+import { REGION, DISTRICT } from '../org-labels';
 import {
   OrgState, OrgTab, UserState, MAJORITY_WARNING, canonical, refError, isActive, usersFromSnapshot,
 } from './setup-org';
@@ -113,12 +114,12 @@ function checkUser(v: UserValues, org: OrgState): Problem[] {
   const regions = splitList(v.region_codes);
   const districts = splitList(v.district_codes);
   if (role === 'county' && regions.length !== 1) {
-    out.push({ column: 'region_codes', message: 'A county user needs exactly one region code in region_codes' });
+    out.push({ column: 'region_codes', message: `A county user needs exactly one ${REGION.lower} code in region_codes` });
   } else if (role !== 'county' && regions.length) {
     out.push({ column: 'region_codes', message: 'Only county users can have region_codes' });
   }
   if (role === 'subcounty' && districts.length !== 1) {
-    out.push({ column: 'district_codes', message: 'A subcounty user needs exactly one district code in district_codes' });
+    out.push({ column: 'district_codes', message: `A subcounty user needs exactly one ${DISTRICT.lower} code in district_codes` });
   } else if (role !== 'subcounty' && districts.length) {
     out.push({ column: 'district_codes', message: 'Only subcounty users can have district_codes' });
   }

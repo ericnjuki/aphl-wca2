@@ -50,7 +50,8 @@ UAT/prod data is still test data.
    accepts one code for `county`; new `district_codes` column for `subcounty`.
 8. **Labels config:** env vars (e.g. `ORG_LEVEL1_LABEL=County`, `ORG_LEVEL2_LABEL=Sub-county`,
    defaults Region/District) exposed via a public `GET /api/v1/config`; used in API error
-   messages and workbook sheet/column headings. UAT/prod `.env` set to County/Sub-county.
+   messages and the workbook "Read me" and validation text. Tab names and column keys stay
+   unchanged (user, 2026-11-12; DECISIONS). UAT/prod `.env` set to County/Sub-county at deploy.
 9. `/auth/me` returns the user's district (for `subcounty`) alongside `regions`.
 
 ## Web (`apps/web`)

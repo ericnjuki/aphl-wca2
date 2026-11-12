@@ -8,6 +8,7 @@ import surveyRouter from '../src/routes/survey';
 import myAssessmentsRouter from '../src/routes/my-assessments';
 import authRouter from '../src/routes/auth';
 import assessmentsRouter from '../src/routes/assessments';
+import configRouter from '../src/routes/config';
 import { workbookToBuffer } from '../src/lib/workbook/xlsx';
 import { errorHandler } from '../src/middleware/errorHandler';
 
@@ -41,6 +42,7 @@ export function testApp(): express.Express {
   app.use('/my-assessments', myAssessmentsRouter);
   app.use('/auth', authRouter);
   app.use('/assessments', assessmentsRouter);
+  app.use('/config', configRouter);
   app.use(errorHandler);
   return app;
 }

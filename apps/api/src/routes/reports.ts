@@ -20,6 +20,7 @@ import { query } from '../db/database';
 import { requireAuth, requirePasswordChanged } from '../middleware/auth';
 import { createError } from '../middleware/errorHandler';
 import { getScope, denyReason, isSummaryOnly, Scope } from '../lib/report-scope';
+import { REGION, DISTRICT } from '../lib/org-labels';
 
 const router = Router();
 router.use(requireAuth, requirePasswordChanged);
@@ -510,7 +511,7 @@ router.get('/regions/:regionId', (req: Request, res: Response, next: NextFunctio
     const [region] = query<{ id: number; name: string }>(
       'SELECT id, name FROM regions WHERE id = ?', [regionId],
     );
-    if (!region) return next(createError('Region not found', 404));
+    if (!region) return next(createError(`${REGION.one} not found`, 404));
 
     const f = parseFilters(req, scope);
 
@@ -547,7 +548,7 @@ router.get('/districts/:districtId', (req: Request, res: Response, next: NextFun
        WHERE d.id = ?`,
       [districtId],
     );
-    if (!district) return next(createError('District not found', 404));
+    if (!district) return next(createError(`${DISTRICT.one} not found`, 404));
 
     const f = parseFilters(req, scope);
 

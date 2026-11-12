@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import healthRouter from './health';
+import configRouter from './config';
 import authRouter from './auth';
 import surveyRouter from './survey';
 import assessmentsRouter from './assessments';
@@ -10,6 +11,7 @@ import myAssessmentsRouter from './my-assessments';
 const router = Router();
 
 router.use('/health',         healthRouter);
+router.use('/config',         configRouter);
 router.use('/auth',           authRouter);
 router.use('/survey',         surveyRouter);
 router.use('/assessments',    assessmentsRouter);

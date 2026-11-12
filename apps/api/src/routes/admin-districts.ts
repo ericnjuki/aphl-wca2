@@ -7,6 +7,7 @@ import { requireAdmin } from '../middleware/auth';
 import { createError } from '../middleware/errorHandler';
 import { syncFacilitiesRegion } from '../lib/org';
 import { assertNoHistory } from '../lib/history';
+import { REGION, DISTRICT } from '../lib/org-labels';
 
 interface DistrictRow extends Record<string, unknown> {
   id: number; code: string; name: string; region_id: number;
@@ -46,12 +47,12 @@ router.post('/', requireAdmin, (req: Request, res: Response, next: NextFunction)
     const { code, name, region_id } = req.body as { code?: string; name?: string; region_id?: unknown };
     if (!code || !name) return next(createError('code and name are required', 400));
     const regionId = regionExists(region_id);
-    if (regionId === null) return next(createError('region_id is required and must reference an existing region', 400));
+    if (regionId === null) return next(createError(`region_id is required and must reference an existing ${REGION.lower}`, 400));
     try {
       execute('INSERT INTO districts (code, name, region_id) VALUES (?, ?, ?)', [code.toUpperCase(), name, regionId]);
     } catch (e: unknown) {
       if (e instanceof Error && e.message.includes('UNIQUE'))
-        return next(createError(`District code "${code.toUpperCase()}" already exists`, 409));
+        return next(createError(`${DISTRICT.one} code "${code.toUpperCase()}" already exists`, 409));
       throw e;
     }
     const [district] = query<DistrictRow>('SELECT * FROM districts WHERE code = ? COLLATE NOCASE', [code]);
@@ -63,13 +64,13 @@ router.put('/:id', requireAdmin, (req: Request, res: Response, next: NextFunctio
   try {
     const id = Number(req.params.id);
     const [existing] = query<DistrictRow>('SELECT * FROM districts WHERE id = ?', [id]);
-    if (!existing) return next(createError('District not found', 404));
+    if (!existing) return next(createError(`${DISTRICT.one} not found`, 404));
     const body = req.body as { code?: string; name?: string; region_id?: unknown };
     const code = (body.code ?? existing.code).toUpperCase();
     const name = body.name ?? existing.name;
     if (!code || !name) return next(createError('code and name are required', 400));
     const regionId = regionExists(body.region_id ?? existing.region_id);
-    if (regionId === null) return next(createError('region_id must reference an existing region', 400));
+    if (regionId === null) return next(createError(`region_id must reference an existing ${REGION.lower}`, 400));
     try {
       transaction(() => {
         execute(
@@ -80,7 +81,7 @@ router.put('/:id', requireAdmin, (req: Request, res: Response, next: NextFunctio
       });
     } catch (e: unknown) {
       if (e instanceof Error && e.message.includes('UNIQUE'))
-        return next(createError(`District code "${code}" already exists`, 409));
+        return next(createError(`${DISTRICT.one} code "${code}" already exists`, 409));
       throw e;
     }
     const [district] = query<DistrictRow>('SELECT * FROM districts WHERE id = ?', [id]);
@@ -92,11 +93,11 @@ router.delete('/:id', requireAdmin, (req: Request, res: Response, next: NextFunc
   try {
     const id = Number(req.params.id);
     const [existing] = query<DistrictRow>('SELECT id FROM districts WHERE id = ?', [id]);
-    if (!existing) return next(createError('District not found', 404));
+    if (!existing) return next(createError(`${DISTRICT.one} not found`, 404));
     assertNoHistory('districts', id);
     const [{ n }] = query<{ n: number }>('SELECT COUNT(*) AS n FROM facilities WHERE district_id = ?', [id]);
     if (n > 0)
-      return next(createError(`${plural(n, 'facility is', 'facilities are')} still assigned to this district`, 409));
+      return next(createError(`${plural(n, 'facility is', 'facilities are')} still assigned to this ${DISTRICT.lower}`, 409));
     execute('DELETE FROM districts WHERE id = ?', [id]);
     res.json({ message: 'Deleted' });
   } catch (err) { next(err); }
