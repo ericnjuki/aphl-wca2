@@ -3,6 +3,18 @@ import path from 'path';
 
 dotenv.config({ path: path.join(__dirname, '../../.env') });
 
+/** "County" → "Counties", "District" → "Districts". Override with *_LABEL_PLURAL when wrong. */
+export function pluralise(word: string): string {
+  return /[^aeiou]y$/i.test(word) ? `${word.slice(0, -1)}ies` : `${word}s`;
+}
+
+// Display names for the two org levels above facilities (DB: regions, districts).
+// Per deployment, e.g. ORG_LEVEL1_LABEL=County, ORG_LEVEL2_LABEL=Sub-county.
+function levelLabel(prefix: string, fallback: string): { singular: string; plural: string } {
+  const singular = process.env[`${prefix}_LABEL`]?.trim() || fallback;
+  return { singular, plural: process.env[`${prefix}_LABEL_PLURAL`]?.trim() || pluralise(singular) };
+}
+
 const env = {
   port: parseInt(process.env.PORT ?? '3000', 10),
   nodeEnv: process.env.NODE_ENV ?? 'development',
@@ -35,6 +47,11 @@ const env = {
   // 0 disables `trust proxy`. Feeds into Express's X-Forwarded-* handling
   // and express-rate-limit's client IP resolution.
   trustProxy: parseInt(process.env.TRUST_PROXY ?? '0', 10),
+
+  orgLabels: {
+    level1: levelLabel('ORG_LEVEL1', 'Region'),
+    level2: levelLabel('ORG_LEVEL2', 'District'),
+  },
 } as const;
 
 export default env;

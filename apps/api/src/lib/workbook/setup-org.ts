@@ -10,6 +10,7 @@ import { ParsedTab, splitList } from './reader';
 import { TabPlan, newTab, diffFields } from './plan';
 import { TAB, SetupTabName, ParsedSetup } from './setup-format';
 import { SetupSnapshot, SnapEntity } from './setup-snapshot';
+import { REGION, DISTRICT } from '../org-labels';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -51,8 +52,8 @@ export interface UserState {
 interface OrgTabConfig { keyCol: string; fields: string[]; label: string }
 
 const ORG_CONFIG: Record<OrgTab, OrgTabConfig> = {
-  [TAB.regions]: { keyCol: 'region_code', fields: ['region_name'], label: 'region' },
-  [TAB.districts]: { keyCol: 'district_code', fields: ['district_name', 'region_code'], label: 'district' },
+  [TAB.regions]: { keyCol: 'region_code', fields: ['region_name'], label: REGION.lower },
+  [TAB.districts]: { keyCol: 'district_code', fields: ['district_name', 'region_code'], label: DISTRICT.lower },
   [TAB.departments]: { keyCol: 'department_code', fields: ['department_name'], label: 'department' },
   [TAB.facilities]: {
     keyCol: 'facility_code', fields: ['facility_name', 'facility_type', 'district_code', 'department_codes'], label: 'facility',

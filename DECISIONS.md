@@ -25,6 +25,11 @@ Durable business rules and architecture/design decisions. Detail lives in `docs/
   `docker-compose.external.yml` replaces the 80/443 bindings with `APP_PORT` (`!override`) and
   keeps certbot off. Where upstream and we built the same thing, upstream's version wins and ours
   only extends it (user's rule, 2026-11-10).
+- (2026-11-12) **Org-level labels are display text only.** `ORG_LEVEL1_LABEL` / `ORG_LEVEL2_LABEL`
+  (default Region/District; `apps/api/src/lib/org-labels.ts`, public `GET /api/v1/config`) change
+  messages, UI wording and the workbook "Read me". Identifiers never follow them: tables, role codes
+  (`county`, `subcounty`), workbook tab names and column keys (`region_code`, `district_codes`).
+  This keeps an exported workbook importable on any deployment and stays close to upstream (user, 2026-11-12).
 
 ## Repo / Workflow
 

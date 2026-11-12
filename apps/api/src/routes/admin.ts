@@ -12,6 +12,7 @@ import { generateTempPassword, generateUsername } from '../lib/credentials';
 import setupRouter from './admin-setup';
 import reviewsRouter from './reviews';
 import { assertNoHistory, type HistoryTable } from '../lib/history';
+import { REGION, DISTRICT, COORDINATOR } from '../lib/org-labels';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -130,12 +131,12 @@ function makeCrudRouter(cfg: CrudConfig) {
 const regionsRouter = makeCrudRouter({
   table: 'regions',
   fields: ['code', 'name'],
-  // Invariant 4 — FKs aren't enforced, so check here. Partner users count too.
+  // Invariant 4 — FKs aren't enforced, so check here. County coordinators count too.
   beforeDelete: (id) => {
     const [{ n }] = query<{ n: number }>('SELECT COUNT(*) AS n FROM districts WHERE region_id = ?', [id]);
-    if (n > 0) return `${n} ${n === 1 ? 'district is' : 'districts are'} still assigned to this region`;
+    if (n > 0) return `${n} ${n === 1 ? `${DISTRICT.lower} is` : `${DISTRICT.lowerMany} are`} still assigned to this ${REGION.lower}`;
     const [{ m }] = query<{ m: number }>('SELECT COUNT(*) AS m FROM user_regions WHERE region_id = ?', [id]);
-    return m > 0 ? `${m} partner ${m === 1 ? 'user is' : 'users are'} still assigned to this region` : null;
+    return m > 0 ? `${m} ${COORDINATOR.county.toLowerCase()}${m === 1 ? ' is' : 's are'} still assigned to this ${REGION.lower}` : null;
   },
 });
 
@@ -191,7 +192,7 @@ facilitiesRouter.post('/', requireAdmin, (req: Request, res: Response, next: Nex
     if (!code || !name) return next(createError('code and name are required', 400));
     // Region is derived from the district (invariant 1); any region_id in the body is ignored.
     const district = resolveDistrict(district_id);
-    if (!district) return next(createError('district_id is required and must reference an existing district', 400));
+    if (!district) return next(createError(`district_id is required and must reference an existing ${DISTRICT.lower}`, 400));
     try {
       execute('INSERT INTO facilities (code, name, facility_type, region_id, district_id) VALUES (?, ?, ?, ?, ?)',
         [code.toUpperCase(), name, facility_type ?? null, district.region_id, district.id]);
@@ -222,7 +223,7 @@ facilitiesRouter.put('/:id', requireAdmin, (req: Request, res: Response, next: N
     const facility_type = body.facility_type === undefined ? existing.facility_type : body.facility_type;
     const department_ids = body.department_ids;
     const district = resolveDistrict(body.district_id ?? existing.district_id);
-    if (!district) return next(createError('district_id is required and must reference an existing district', 400));
+    if (!district) return next(createError(`district_id is required and must reference an existing ${DISTRICT.lower}`, 400));
     try {
       execute(`UPDATE facilities SET code=?, name=?, facility_type=?, region_id=?, district_id=?, updated_at=datetime('now') WHERE id=?`,
         [code.toUpperCase(), name, facility_type ?? null, district.region_id, district.id, id]);
@@ -316,21 +317,21 @@ function validatePlacement(
   if ('error' in districtIds) return districtIds;
 
   if (role !== 'county' && regionIds.length > 0)
-    return { error: 'Only county coordinators can be assigned a county (region_ids)' };
+    return { error: `Only ${COORDINATOR.county.toLowerCase()}s can be assigned a ${REGION.lower} (region_ids)` };
   if (role !== 'subcounty' && districtIds.length > 0)
-    return { error: 'Only sub-county coordinators can be assigned a sub-county (district_ids)' };
+    return { error: `Only ${COORDINATOR.subcounty.toLowerCase()}s can be assigned a ${DISTRICT.lower} (district_ids)` };
   if (NO_FACILITY_ROLES.includes(role) && Object.values(fields).some((v) => v != null))
-    return { error: 'National, county and sub-county users cannot have a facility, department, org role or title' };
+    return { error: `National users and ${REGION.lower}/${DISTRICT.lower} coordinators cannot have a facility, department, org role or title` };
   if (role === 'facility_admin' && fields.facility_id == null)
     return { error: 'Facility admins need a facility' };
 
   if (role === 'county') {
-    if (regionIds.length !== 1) return { error: 'County coordinators need exactly one county (region_ids)' };
-    if (!query('SELECT id FROM regions WHERE id = ?', [regionIds[0]]).length) return { error: 'Unknown region in region_ids' };
+    if (regionIds.length !== 1) return { error: `${COORDINATOR.county}s need exactly one ${REGION.lower} (region_ids)` };
+    if (!query('SELECT id FROM regions WHERE id = ?', [regionIds[0]]).length) return { error: `Unknown ${REGION.lower} in region_ids` };
   }
   if (role === 'subcounty') {
-    if (districtIds.length !== 1) return { error: 'Sub-county coordinators need exactly one sub-county (district_ids)' };
-    if (!query('SELECT id FROM districts WHERE id = ?', [districtIds[0]]).length) return { error: 'Unknown district in district_ids' };
+    if (districtIds.length !== 1) return { error: `${COORDINATOR.subcounty}s need exactly one ${DISTRICT.lower} (district_ids)` };
+    if (!query('SELECT id FROM districts WHERE id = ?', [districtIds[0]]).length) return { error: `Unknown ${DISTRICT.lower} in district_ids` };
   }
   return { regionIds, districtIds };
 }

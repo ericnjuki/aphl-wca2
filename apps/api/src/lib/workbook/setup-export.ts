@@ -7,6 +7,7 @@ import { SETUP_TABS, TAB, USERNAME_COLUMN, ID_TYPES, SYSTEM_ROLES, STATUSES } fr
 import { SetupSnapshot } from './setup-snapshot';
 import { workbookToBuffer } from './xlsx';
 import { writeReadme, writeTab, appVersion } from './writer';
+import { REGION, DISTRICT } from '../org-labels';
 
 function spec(name: string): TabSpec {
   const found = SETUP_TABS.find((t) => t.name === name);
@@ -21,8 +22,11 @@ const README: [string, string][] = [
   ['Your account', 'Keep your own admin account on the Users tab — the import will not disable or demote you.'],
   ['Lists', 'department_codes takes several codes separated by ";".'],
   ['Allowed values', `id_type: NRC, Passport, Other · system_role: ${SYSTEM_ROLES.join(', ')} (default staff) · status: active, disabled (default active).`],
-  ['Coordinators', 'county users need exactly one region code in region_codes; subcounty users exactly one district code in district_codes. national, county and subcounty users have no facility, department, org role or title. facility_admin users need a facility_code. Other users leave region_codes and district_codes empty.'],
+  ['Coordinators', `county users need exactly one ${REGION.lower} code in region_codes; subcounty users exactly one ${DISTRICT.lower} code in district_codes. national, county and subcounty users have no facility, department, org role or title. facility_admin users need a facility_code. Other users leave region_codes and district_codes empty.`],
   ['Departments', "A user's department_code must be one of their facility's department_codes."],
+  ...(REGION.one !== 'Region' || DISTRICT.one !== 'District'
+    ? [['Names', `In this system regions are called ${REGION.lowerMany} and districts ${DISTRICT.lowerMany}. The tab and column names keep "region" and "district".`] as [string, string]]
+    : []),
   ['username', 'Shown for reference and ignored on import. New users get a generated username and temporary password, shown once after the import.'],
 ];
 
