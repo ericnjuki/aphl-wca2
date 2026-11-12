@@ -61,7 +61,7 @@ export function backfillResponseDistrict(facilityId: number, districtId: number)
   );
 }
 
-/** Regions assigned to a partner (monitor) user — empty for everyone else. */
+/** Region assigned to a county coordinator — empty for everyone else. */
 export function getUserRegions(userId: number): { id: number; name: string }[] {
   return query<{ id: number; name: string }>(
     `SELECT r.id, r.name FROM user_regions ur JOIN regions r ON r.id = ur.region_id
@@ -70,10 +70,23 @@ export function getUserRegions(userId: number): { id: number; name: string }[] {
   );
 }
 
-/** Attach `regions` and `region_ids` to a user payload sent to the client. */
+/** District assigned to a sub-county coordinator — empty for everyone else. */
+export function getUserDistricts(userId: number): { id: number; name: string; region_id: number }[] {
+  return query<{ id: number; name: string; region_id: number }>(
+    `SELECT d.id, d.name, d.region_id FROM user_districts ud JOIN districts d ON d.id = ud.district_id
+     WHERE ud.user_id = ? ORDER BY d.name`,
+    [userId],
+  );
+}
+
+/** Attach regions/region_ids and districts/district_ids to a user payload sent to the client. */
 export function withRegions<T extends { id: number }>(
   user: T,
-): T & { regions: { id: number; name: string }[]; region_ids: number[] } {
+): T & {
+  regions: { id: number; name: string }[]; region_ids: number[];
+  districts: { id: number; name: string; region_id: number }[]; district_ids: number[];
+} {
   const regions = getUserRegions(user.id);
-  return { ...user, regions, region_ids: regions.map((r) => r.id) };
+  const districts = getUserDistricts(user.id);
+  return { ...user, regions, region_ids: regions.map((r) => r.id), districts, district_ids: districts.map((d) => d.id) };
 }

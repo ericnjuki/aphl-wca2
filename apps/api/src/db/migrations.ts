@@ -306,6 +306,24 @@ const migrations: { id: number; sql: string }[] = [
       ALTER TABLE user_titles ADD COLUMN archived_at TEXT;
     `,
   },
+  {
+    id: 12,
+    sql: `
+      -- Role model (plans/2026-11-12-role-model.md): sub-county coordinators are
+      -- scoped to one district. Mirrors user_regions (one row per county
+      -- coordinator). Foreign keys are not enforced — the admin API keeps this
+      -- table consistent.
+      CREATE TABLE IF NOT EXISTS user_districts (
+        user_id     INTEGER NOT NULL REFERENCES users(id),
+        district_id INTEGER NOT NULL REFERENCES districts(id),
+        PRIMARY KEY (user_id, district_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_user_districts_district ON user_districts(district_id);
+
+      -- Partner (monitor) users become county coordinators.
+      UPDATE users SET role = 'county' WHERE role = 'monitor';
+    `,
+  },
 ];
 
 export async function runMigrations(db: Database): Promise<void> {

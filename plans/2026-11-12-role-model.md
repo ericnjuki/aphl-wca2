@@ -1,5 +1,5 @@
 # Role model: national / county / sub-county coordinators, facility admin, scoped reviews
-**Status:** draft
+**Status:** in-progress
 
 Fork-only change (user, 2026-11-12): accepts future merge conflicts with upstream's region-monitor
 design (`docs/superpowers/specs/2026-10-06-region-monitors-design.md`). No data migration: all
