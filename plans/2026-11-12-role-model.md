@@ -70,7 +70,7 @@ UAT/prod data is still test data.
    land on their own individual report.
 5. **Labels:** fetch `/config` at startup; replace hardcoded Region/District strings in reports,
    setup and users pages; en/pt/sw locale strings for role names.
-6. In-app docs `docs/1.0.0/users.md`, `reports.md` updated.
+6. In-app docs `apps/web/src/docs/1.0.0/users.md` and `reports.md` updated.
 
 ## Tests
 
