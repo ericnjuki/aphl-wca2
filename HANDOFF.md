@@ -15,7 +15,7 @@ type-checks. Ended at the context limit before step 8 and the tests.
 - 5: `routes/reviews.ts` (mounted at `/admin/reviews`, same URLs): scoped by the submitter's
   CURRENT facility; out-of-scope → 404; own submission → 403; new `GET /admin/reviews/:id`.
 - 6: users routes in `routes/admin.ts`: `validatePlacement` per role, `user_districts` writes,
-  facility-admin limits (`manageDeny`). Choices not in the plan, still to confirm with the user:
+  facility-admin limits (`manageDeny`). Choices not in the plan (user OK "for now", 2026-11-12):
   `facility_admin` needs a facility, staff facility stays optional, admin keeps its optional
   placement, facility admins may also edit org role/title and cannot change their own role.
 - 7: workbook: `SYSTEM_ROLES` from `ROLES`, new optional `district_codes` column end to end.
@@ -27,9 +27,8 @@ NOT run yet; the monitor-based suites will fail until rewritten.
 
 1. Backend 8 (labels config).
 2. `pnpm -F api test`: rewrite the monitor suites and add the new role tests (plan → Tests).
-3. Report the step-6 choices above to the user.
-4. Web section of the plan, then type/build/tests; report done and ask before a live test pass.
-5. Email: separate plan after this (TODO.md).
+3. Web section of the plan, then type/build/tests; report done and ask before a live test pass.
+4. Email: separate plan after this (TODO.md).
 
 ## Gotchas found this session
 
