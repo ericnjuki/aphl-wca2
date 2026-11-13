@@ -65,6 +65,7 @@ import { api } from "@/lib/api";
 import { assignableRoles, USER_MANAGER_ROLES, type Role } from "@/lib/roles";
 import { useRoleLabel } from "@/hooks/useRoleLabel";
 import { useAuthStore } from "@/store/auth";
+import { NoAccessNotice } from "@/components/NoAccessNotice";
 import { useOrgLabels } from "@/store/config";
 
 const ENV = import.meta.env;
@@ -724,9 +725,7 @@ export default function UsersPage() {
     <ContentLayout nav={navComponents()}>
       <div className="flex  flex-col min-h-[calc(100vh-26px-56px)] max-h-[calc(100vh-26px-56px)] w-full h-full">
         {!canManage ? (
-          <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
-            You don't have access to user management.
-          </div>
+          <NoAccessNotice what="user management" />
         ) : (
           <>
             <div className="flex-1 overflow-y-auto">

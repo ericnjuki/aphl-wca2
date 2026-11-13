@@ -6,6 +6,7 @@ import { MaturityLegend } from '../MaturityLegend';
 import { MaturityStackedBar } from '../MaturityStackedBar';
 import { MaturityBreakdownTable } from '../MaturityBreakdownTable';
 import { ChartSkeleton } from '../ChartSkeleton';
+import { ReportError } from '../ReportError';
 import { ReportKpiCards } from '../ReportKpiCards';
 import { UnassignedBanner } from '../UnassignedBanner';
 import { archivedLabel } from '@/lib/reports/archived';
@@ -23,7 +24,7 @@ export function RegionReport({ regionId }: Props) {
   const { data, isPending, isError, error } = useRegionReport(regionId);
 
   if (isPending) return <ChartSkeleton />;
-  if (isError) return <div className="p-6 text-sm text-destructive">Error: {(error as Error).message}</div>;
+  if (isError) return <ReportError error={error} />;
 
   const covered = data.items.filter((r) => r.respondents > 0 || !!r.suppressed).length;
 

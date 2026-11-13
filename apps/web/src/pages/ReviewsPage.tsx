@@ -31,6 +31,8 @@ import {
 import { api } from '@/lib/api';
 import { formatAvgLevel } from '@/lib/reports/maturity';
 import { useAuthStore } from '@/store/auth';
+import { REVIEWER_ROLES } from '@/lib/roles';
+import { NoAccessNotice } from '@/components/NoAccessNotice';
 
 interface ReviewRow {
   id: number;                 // user_assessment id
@@ -56,8 +58,11 @@ const metaLine = (r: ReviewRow) =>
 function ReviewsPage() {
   const qc = useQueryClient();
   const myId = useAuthStore((s) => s.user?.id ?? null);
+  const role = useAuthStore((s) => s.user?.role);
+  const canReview = role != null && REVIEWER_ROLES.includes(role);
   const { data, isPending, isError, error } = useQuery({
     queryKey: ['admin', 'reviews', 'pending'],
+    enabled: canReview,
     queryFn: async () => {
       const res = await api.get<{ reviews: ReviewRow[] }>('/admin/reviews?status=pending');
       if (res.error !== null) throw new Error(res.error);
@@ -149,7 +154,9 @@ function ReviewsPage() {
   return (
     <ContentLayout nav={navBar}>
       <div className="flex flex-col min-h-[calc(100vh-26px-56px)] max-h-[calc(100vh-26px-56px)] w-full">
-        {isPending ? (
+        {!canReview ? (
+          <NoAccessNotice what="reviews" />
+        ) : isPending ? (
           <div className="flex flex-col gap-3 p-4">
             <Skeleton className="h-10 rounded-sm" />
             <Skeleton className="h-10 rounded-sm" />

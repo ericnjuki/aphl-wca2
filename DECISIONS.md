@@ -30,6 +30,11 @@ Durable business rules and architecture/design decisions. Detail lives in `docs/
   messages, UI wording and the workbook "Read me". Identifiers never follow them: tables, role codes
   (`county`, `subcounty`), workbook tab names and column keys (`region_code`, `district_codes`).
   This keeps an exported workbook importable on any deployment and stays close to upstream (user, 2026-11-12).
+- (2026-11-13) **React Query never retries a 4xx, and query functions use `unwrap()`
+  (`apps/web/src/lib/api.ts`) so their errors keep the HTTP status.** A 403/404 won't change on
+  retry, and three backed-off retries left the page on a skeleton for seconds. The status lets a page
+  show "You don't have access" (`NoAccessNotice`) for a 403. A plain `new Error(res.error)` loses
+  the status and is always retried; older hooks still do that (convert them when touched).
 
 ## Repo / Workflow
 

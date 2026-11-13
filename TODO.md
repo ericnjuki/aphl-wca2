@@ -5,13 +5,7 @@
 ## Now
 
 - (2026-11-12) Role model rework: plan `plans/2026-11-12-role-model.md` (signed off, in progress).
-  Live pass 2026-11-13 passed; only the three follow-ups below remain before deploy.
-- (2026-11-13) Bug: `ReportsPage.tsx:56` enables `useNationalReport` on every level, so non-national
-  roles fire a 403 `/reports/national` on each report view. Gate it on `level === 'national'`.
-- (2026-11-13) A forbidden report URL (typed by hand) renders blank: React Query retries the 403 and
-  no "no access" message shows. Don't retry 4xx; show a notice like Users page does.
-- (2026-11-13) `/reviews` for non-reviewers (typed URL) renders an empty page with a 403; show the
-  same "You don't have access" notice as `/users`.
+  Code, live pass and UI follow-ups done; remaining: deploy to UAT/prod (HANDOFF → Next).
 - (2026-11-12) Email for account-created / password-reset (no mail code exists yet). Separate plan after the
   role model. Open: which SMTP/provider (NPHL relay, M365, Brevo/SendGrid?) and whether to mail on create too.
 
