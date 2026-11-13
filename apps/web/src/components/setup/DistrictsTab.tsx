@@ -19,12 +19,14 @@ import { TableFillerRow } from "@/components/ui/table-filler";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { api } from "@/lib/api";
 import type { District } from "@/lib/setup/districts";
+import { useOrgLabels } from "@/store/config";
 import { listKey, listPath, isArchived, ARCHIVED_HINT } from "@/lib/setup/archived";
 
 interface Region { id: number; code: string; name: string; }
 
 export function DistrictsTab() {
   const qc = useQueryClient();
+  const { region, district } = useOrgLabels();
   const [sheetOpen, setSheetOpen] = useState(false);
   const [editing, setEditing] = useState<District | null>(null);
   const [deleteId, setDeleteId] = useState<number | null>(null);
@@ -84,7 +86,7 @@ export function DistrictsTab() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!regionId) { toast.error("Select a region."); return; }
+    if (!regionId) { toast.error(`Select a ${region.lower}.`); return; }
     setLoading(true);
     const body = { code: code.trim().toUpperCase(), name: name.trim(), region_id: Number(regionId) };
     const res = editing
@@ -92,7 +94,7 @@ export function DistrictsTab() {
       : await api.post("/admin/districts", body);
     setLoading(false);
     if (res.error !== null) { toast.error(res.error); return; }
-    toast.success(editing ? "District updated." : "District created.");
+    toast.success(`${district.one} ${editing ? "updated" : "created"}.`);
     invalidate();
     setSheetOpen(false);
   }
@@ -105,7 +107,7 @@ export function DistrictsTab() {
           <Input
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
-            placeholder="Search code, name, region…"
+            placeholder={`Search code, name, ${region.lower}…`}
             className="h-8 pl-7 text-sm"
           />
         </div>
@@ -125,7 +127,7 @@ export function DistrictsTab() {
             <TableRow>
               <TableHead className="w-24 text-xs uppercase tracking-wide">Code</TableHead>
               <TableHead className="text-xs uppercase tracking-wide">Name</TableHead>
-              <TableHead className="text-xs uppercase tracking-wide">Region</TableHead>
+              <TableHead className="text-xs uppercase tracking-wide">{region.one}</TableHead>
               <TableHead className="w-24 text-xs uppercase tracking-wide">Facilities</TableHead>
               <TableHead className="w-20 text-right text-xs uppercase tracking-wide">Actions</TableHead>
             </TableRow>
@@ -134,7 +136,7 @@ export function DistrictsTab() {
             {filtered.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={5} className="py-8 text-center text-muted-foreground">
-                  {districts.length === 0 ? "No districts yet." : "No districts match your search."}
+                  {districts.length === 0 ? `No ${district.lowerMany} yet.` : `No ${district.lowerMany} match your search.`}
                 </TableCell>
               </TableRow>
             ) : paged.map((d) => (
@@ -185,7 +187,7 @@ export function DistrictsTab() {
       <Sheet open={sheetOpen} onOpenChange={(v) => !v && setSheetOpen(false)}>
         <SheetContent className="flex flex-col gap-0 sm:max-w-md">
           <SheetHeader className="px-6 py-4 border-b">
-            <SheetTitle>{editing ? "Edit District" : "New District"}</SheetTitle>
+            <SheetTitle>{editing ? `Edit ${district.one}` : `New ${district.one}`}</SheetTitle>
           </SheetHeader>
           <form onSubmit={handleSubmit} className="flex flex-col flex-1 overflow-y-auto">
             <div className="px-6 py-6">
@@ -194,9 +196,9 @@ export function DistrictsTab() {
                 <Input value={code} onChange={(e) => setCode(e.target.value.toUpperCase())} placeholder="e.g. TMK" required />
                 <Label className="text-right text-sm">Name</Label>
                 <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Temeke" required />
-                <Label className="text-right text-sm">Region</Label>
+                <Label className="text-right text-sm">{region.one}</Label>
                 <Select value={regionId} onValueChange={setRegionId}>
-                  <SelectTrigger className="text-sm"><SelectValue placeholder="Select region…" /></SelectTrigger>
+                  <SelectTrigger className="text-sm"><SelectValue placeholder={`Select ${region.lower}…`} /></SelectTrigger>
                   <SelectContent>
                     <SelectGroup>
                       {regions.map((r) => (
@@ -218,8 +220,8 @@ export function DistrictsTab() {
       <AlertDialog open={deleteId !== null} onOpenChange={(v) => !v && setDeleteId(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete this district?</AlertDialogTitle>
-            <AlertDialogDescription>Districts that still have facilities can't be deleted — reassign the facilities first.</AlertDialogDescription>
+            <AlertDialogTitle>{`Delete this ${district.lower}?`}</AlertDialogTitle>
+            <AlertDialogDescription>{`${district.many} that still have facilities can't be deleted — reassign the facilities first.`}</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
@@ -228,7 +230,7 @@ export function DistrictsTab() {
               onClick={async () => {
                 const res = await api.delete(`/admin/districts/${deleteId}`);
                 if (res.error !== null) { toast.error(res.error); return; }
-                toast.success("District deleted.");
+                toast.success(`${district.one} deleted.`);
                 invalidate();
                 setDeleteId(null);
               }}
