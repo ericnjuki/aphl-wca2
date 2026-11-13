@@ -13,12 +13,13 @@ admin role picker with Sub-county labels) all behave as planned. Three minor UI 
 ## In progress
 
 `plans/2026-11-12-role-model.md`: code, docs and live pass done. Remaining: the three 2026-11-13 TODO
-follow-ups (need user approval to fix), then deploy.
+follow-ups (approved, not started), then deploy.
 
 ## Next
 
-1. Get approval for, then fix, the three 2026-11-13 follow-ups in TODO.md (one-line national-query gate;
-   no-access notices for forbidden report URLs and `/reviews`). Type check + tests, quick re-check.
+1. **First task (user approved the fixes 2026-11-13, "yes, in next session"):** fix the three 2026-11-13
+   follow-ups in TODO.md (one-line national-query gate; no-access notices for forbidden report URLs and
+   `/reviews`, matching `/users`). Type check + tests, quick live re-check, report done.
 2. At deploy: `ORG_LEVEL1_LABEL=County`, `ORG_LEVEL2_LABEL=Sub-county` in UAT/prod `.env`; existing
    `monitor` users need a new role (plan → Hard to reverse). Then email plan (TODO.md).
 
