@@ -122,8 +122,8 @@ describe('approved_only report filter', () => {
     });
   });
 
-  describe('partner (monitor) users', () => {
-    let monitor: number, f3: number, kgm: number;
+  describe('county coordinators', () => {
+    let county: number, f3: number, kgm: number;
 
     // Kigamboni Clinic: one facility in its own district, so suppression of
     // its row depends only on its own (filtered) respondent count.
@@ -139,8 +139,8 @@ describe('approved_only report filter', () => {
     beforeEach(() => {
       kgm = createDistrict('KGM', 'Kigamboni', dsm);
       f3 = createFacility('F3', 'Kigamboni Clinic', { regionId: dsm, districtId: kgm });
-      monitor = createUser({ role: 'county' });
-      assignRegions(monitor, [dsm]);
+      county = createUser({ role: 'county' });
+      assignRegions(county, [dsm]);
       // Give Temeke enough approved respondents (with the one above) that it is
       // not itself hidden in the region list, so Kigamboni's own count decides.
       for (let i = 0; i < 3; i++) {
@@ -152,16 +152,16 @@ describe('approved_only report filter', () => {
       fill(2, 3);
       // Only the 2 approved respondents count, so Kigamboni is a small row in the
       // region list and (being hidden there) its own report is privacy hidden.
-      const regionRes = await get(`/reports/regions/${dsm}`, monitor);
+      const regionRes = await get(`/reports/regions/${dsm}`, county);
       expect(row(regionRes.body.items, 'district_id', kgm)).toMatchObject({ suppressed: 'small', respondents: 0 });
-      const res = await get(`/reports/districts/${kgm}`, monitor);
+      const res = await get(`/reports/districts/${kgm}`, county);
       expect(res.status).toBe(200);
       expect(res.body.meta).toMatchObject({ privacy_hidden: true, total_respondents: 0, avg_level: null });
     });
 
     it('does not suppress a row with enough approved respondents', async () => {
       fill(3, 2);
-      const res = await get(`/reports/districts/${kgm}`, monitor);
+      const res = await get(`/reports/districts/${kgm}`, county);
       const r = row(res.body.items, 'facility_id', f3);
       expect(r.suppressed).toBeUndefined();
       expect(r.respondents).toBe(3);
@@ -169,7 +169,7 @@ describe('approved_only report filter', () => {
 
     it('cannot turn the filter off', async () => {
       fill(3, 2);
-      const res = await get(`/reports/districts/${kgm}?approved_only=false`, monitor);
+      const res = await get(`/reports/districts/${kgm}?approved_only=false`, county);
       expect(row(res.body.items, 'facility_id', f3)).toMatchObject({ respondents: 3 });
       expect(res.body.meta.filters.approved_only).toBe(true);
     });
