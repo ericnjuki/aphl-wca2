@@ -73,6 +73,30 @@ UAT/prod data is still test data.
    setup and users pages; en/pt/sw locale strings for role names.
 6. In-app docs `apps/web/src/docs/1.0.0/users.md` and `reports.md` updated.
 
+Implementation notes (2026-11-13, from the API side):
+- First: type `AuthUser.role` and menu `Role` as the six-role union, mirroring
+  `apps/api/src/lib/roles.ts` (`REVIEWER_ROLES`, `USER_MANAGER_ROLES`, `FACILITY_ROLES`, summary-only)
+  in one web `lib/roles.ts`, so `tsc` flags every stale `'monitor'` check. Add `districts` /
+  `district_ids` to `AuthUser` (`/auth/me` already returns them).
+- Admin is not an assessment taker: check `survey.ts`'s gate; if so, `HomeRoute` sends admin
+  (and national/county/subcounty) to Reports and the menu drops Survey/My Assessments for them.
+- Landing: admin/national stay national; county → their region; subcounty → `districts[0]`;
+  facility_admin → facility; staff → `/reports/users/:id` (changes `landing.test.ts`). A coordinator
+  with no assignment gets a "not assigned" message, not the old regions picker.
+- Links stop at the role's limit both ways: no links on national's per-county list for national;
+  no department grid for summary-only (`FacilityReport` `isMonitor`); breadcrumbs/back links above
+  a subcounty user's district must not render (they 403); no `/reports/users/:id` link from
+  review detail for subcounty.
+- Users page as facility admin: check the pickers' GET endpoints are readable by
+  `facility_admin`; ungate the `enabled: isAdmin` query (~line 571). The API PUT compares
+  `facility_id` with `!==` and checks `is_enabled`: `buildUserBody` must send the existing numeric
+  facility and unchanged `is_enabled`, and always explicit `region_ids` / `district_ids` (empty
+  when unused). Cover in `placement.test.ts`.
+- Role names interpolate the labels (`t('roles.county', { label })`), defaults until `/config` loads.
+- Review detail: same presentation as My Assessments' detail, extracting its table (not a copy).
+- Grep locale JSON and `src/docs/**/*.md` for "monitor"/"Partner" at the end.
+- Edit repo files with Edit/node, not `sed -i` (it drops CRLF in Git Bash).
+
 ## Tests
 
 - Rewrite the monitor-based API tests (`admin-users-monitors`, `reports-monitors`,
