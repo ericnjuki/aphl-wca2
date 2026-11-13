@@ -2,8 +2,34 @@ const BASE_URL = (import.meta.env.VITE_API_URL as string | undefined) ?? 'http:/
 
 export const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 
-export type ApiResponse<T> = { data: T; error: null } | { data: null; error: string };
+export type ApiResponse<T> = { data: T; error: null } | { data: null; error: string; status: number };
 export type BinaryResponse<T> = ApiResponse<T> & { status: number };
+
+/** A failed request, thrown from query functions so callers can branch on the status (0 = network). */
+export class ApiError extends Error {
+  readonly status: number;
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+  }
+}
+
+/** Unwrap a response for a query function: the data, or an ApiError carrying the status. */
+export function unwrap<T>(res: ApiResponse<T>): T {
+  if (res.error !== null) throw new ApiError(res.error, res.status);
+  return res.data;
+}
+
+export function isForbidden(err: unknown): boolean {
+  return err instanceof ApiError && err.status === 403;
+}
+
+/** React Query retry policy: a 4xx (no access, not found, bad input) won't change on retry. */
+export function shouldRetry(failureCount: number, err: unknown): boolean {
+  if (err instanceof ApiError && err.status >= 400 && err.status < 500) return false;
+  return failureCount < 3;
+}
 
 // ── Session expiry ────────────────────────────────────────────────────────────
 // A 401 on a non-/auth request means the session ended (e.g. the user was
@@ -36,12 +62,12 @@ async function request<T>(path: string, init?: RequestInit): Promise<ApiResponse
 
     if (!res.ok) {
       notifyIfExpired(path, res.status);
-      return { data: null, error: (json as { error?: string })?.error ?? res.statusText };
+      return { data: null, error: (json as { error?: string })?.error ?? res.statusText, status: res.status };
     }
 
     return { data: json as T, error: null };
   } catch {
-    return { data: null, error: 'Network error. Please check your connection.' };
+    return { data: null, error: 'Network error. Please check your connection.', status: 0 };
   }
 }
 

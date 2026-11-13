@@ -5,6 +5,7 @@ import { MaturityLegend } from '../MaturityLegend';
 import { SubcompetencyDetailTable } from '../SubcompetencyDetailTable';
 import { MaturityBreakdownTable } from '../MaturityBreakdownTable';
 import { ChartSkeleton } from '../ChartSkeleton';
+import { ReportError } from '../ReportError';
 import { CompetencyRadarChart } from '../charts/CompetencyRadarChart';
 
 interface Props { userId: number }
@@ -13,7 +14,7 @@ export function IndividualReport({ userId }: Props) {
   const { data, isPending, isError, error } = useIndividualReport(userId);
 
   if (isPending) return <ChartSkeleton />;
-  if (isError) return <div className="p-6 text-sm text-destructive">Error: {(error as Error).message}</div>;
+  if (isError) return <ReportError error={error} />;
 
   const fullName = `${data.user.first_name} ${data.user.last_name}`;
 

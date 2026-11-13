@@ -5,6 +5,7 @@ import { MaturityLegend } from '../MaturityLegend';
 import { MaturityStackedBar } from '../MaturityStackedBar';
 import { MaturityBreakdownTable } from '../MaturityBreakdownTable';
 import { ChartSkeleton } from '../ChartSkeleton';
+import { ReportError } from '../ReportError';
 import { ReportKpiCards } from '../ReportKpiCards';
 import { PrivacyHiddenNotice } from '../PrivacyHiddenNotice';
 import { UnassignedBanner } from '../UnassignedBanner';
@@ -25,7 +26,7 @@ export function FacilityReport({ facilityId }: Props) {
   const { data, isPending, isError, error } = useFacilityReport(facilityId);
 
   if (isPending) return <ChartSkeleton />;
-  if (isError) return <div className="p-6 text-sm text-destructive">Error: {(error as Error).message}</div>;
+  if (isError) return <ReportError error={error} />;
 
   const covered = data.items.filter((r) => r.respondents > 0 || !!r.suppressed).length;
 

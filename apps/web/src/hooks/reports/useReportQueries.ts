@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { api } from '@/lib/api';
+import { api, unwrap } from '@/lib/api';
 import { useReportsFiltersStore } from '@/store/reports-filters';
 import type {
   NationalReportResponse,
@@ -43,8 +43,7 @@ export function useNationalReport(enabled: boolean = true) {
     enabled,
     queryFn: async () => {
       const res = await api.get<NationalReportResponse>(`/reports/national${qs(filters)}`);
-      if (res.error !== null) throw new Error(res.error);
-      return res.data;
+      return unwrap(res);
     },
     staleTime: FIVE_MINUTES,
   });
@@ -57,8 +56,7 @@ export function useRegionReport(regionId: number | null) {
     enabled: regionId != null,
     queryFn: async () => {
       const res = await api.get<RegionReportResponse>(`/reports/regions/${regionId}${qs(filters)}`);
-      if (res.error !== null) throw new Error(res.error);
-      return res.data;
+      return unwrap(res);
     },
     staleTime: FIVE_MINUTES,
   });
@@ -71,8 +69,7 @@ export function useDistrictReport(districtId: number | null) {
     enabled: districtId != null,
     queryFn: async () => {
       const res = await api.get<DistrictReportResponse>(`/reports/districts/${districtId}${qs(filters)}`);
-      if (res.error !== null) throw new Error(res.error);
-      return res.data;
+      return unwrap(res);
     },
     staleTime: FIVE_MINUTES,
   });
@@ -85,8 +82,7 @@ export function useFacilityReport(facilityId: number | null) {
     enabled: facilityId != null,
     queryFn: async () => {
       const res = await api.get<FacilityReportResponse>(`/reports/facilities/${facilityId}${qs(filters)}`);
-      if (res.error !== null) throw new Error(res.error);
-      return res.data;
+      return unwrap(res);
     },
     staleTime: FIVE_MINUTES,
   });
@@ -102,8 +98,7 @@ export function useDepartmentReport(departmentId: number | null, facilityId: num
       if (facilityId != null) params.set('facility_id', String(facilityId));
       const s = params.toString();
       const res = await api.get<DepartmentReportResponse>(`/reports/departments/${departmentId}${s ? `?${s}` : ''}`);
-      if (res.error !== null) throw new Error(res.error);
-      return res.data;
+      return unwrap(res);
     },
     staleTime: FIVE_MINUTES,
   });
@@ -116,8 +111,7 @@ export function useIndividualReport(userId: number | null) {
     enabled: userId != null,
     queryFn: async () => {
       const res = await api.get<IndividualReportResponse>(`/reports/users/${userId}${qs(filters)}`);
-      if (res.error !== null) throw new Error(res.error);
-      return res.data;
+      return unwrap(res);
     },
     staleTime: FIVE_MINUTES,
   });

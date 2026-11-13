@@ -53,7 +53,7 @@ function ReportsPage() {
   const { redirect: redirectTarget, unassigned } = reportsLanding(user, level, baseUrl);
 
   // Fetch only the active level's data — other hooks stay disabled via null ids.
-  const national   = useNationalReport(redirectTarget == null && !unassigned);
+  const national   = useNationalReport(level === 'national' && redirectTarget == null && !unassigned);
   const region     = useRegionReport(regionId);
   const district   = useDistrictReport(districtId);
   const facility   = useFacilityReport(facilityId);

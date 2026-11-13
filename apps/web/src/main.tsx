@@ -8,6 +8,7 @@ import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
 import "@/styles/index.css";
 import { useAuthStore, onSessionEnd } from "@/store/auth";
 import { isFacilityRole } from "@/lib/roles";
+import { shouldRetry } from "@/lib/api";
 import { useConfigStore } from "@/store/config";
 import { Toaster } from "@/components/ui/sonner";
 
@@ -30,7 +31,7 @@ const DocsPage = React.lazy(() => import("@/pages/DocsPage"));
 
 useConfigStore.getState().loadConfig();
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({ defaultOptions: { queries: { retry: shouldRetry } } });
 onSessionEnd(() => queryClient.clear());
 const sqliteClient = new SQLiteClient();
 
