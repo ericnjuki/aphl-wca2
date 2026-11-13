@@ -11,7 +11,9 @@ from `monitor` to county/subcounty/national/facility_admin with `district_codes`
 
 ## In progress
 
-`plans/2026-11-12-role-model.md` → Web section, starting at item 1 (Role type + menu).
+`plans/2026-11-12-role-model.md` → Web section, not started (no web code changed yet). Start with
+the plan's Web "Implementation notes" (typed role union + web `lib/roles.ts`), then items 1-6.
+Session ended at the context limit after surveying the web code.
 
 ## Next
 
@@ -25,7 +27,7 @@ from `monitor` to county/subcounty/national/facility_admin with `district_codes`
 ## Gotchas
 
 - Repo files are CRLF: scripted string replacements must convert `
-` → `
+` → `
 ` (or use Edit).
 - Git Bash mangles `/wca`-style args (docker `-e`, curl `-w`): `export MSYS_NO_PATHCONV=1`.
 - PowerShell → ssh: send multi-line scripts base64-encoded (`echo <b64> | base64 -d | bash`).
