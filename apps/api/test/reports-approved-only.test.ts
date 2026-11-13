@@ -139,7 +139,7 @@ describe('approved_only report filter', () => {
     beforeEach(() => {
       kgm = createDistrict('KGM', 'Kigamboni', dsm);
       f3 = createFacility('F3', 'Kigamboni Clinic', { regionId: dsm, districtId: kgm });
-      monitor = createUser({ role: 'monitor' });
+      monitor = createUser({ role: 'county' });
       assignRegions(monitor, [dsm]);
       // Give Temeke enough approved respondents (with the one above) that it is
       // not itself hidden in the region list, so Kigamboni's own count decides.

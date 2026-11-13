@@ -3,7 +3,7 @@ import request from 'supertest';
 import { execute } from '../src/db/database';
 import {
   initTestDb, resetDb, testApp, asUser, createRegion, createDistrict, createFacility,
-  createUser, assignRegions, createDepartment, addResponse,
+  createUser, assignRegions, createSubcounty, createDepartment, addResponse,
 } from './helpers';
 
 const app = testApp();
@@ -52,7 +52,7 @@ describe('small-group suppression for partner users', () => {
     respond(m1, mss, lab, 2);
 
     admin = createUser({ role: 'admin' });
-    monitor = createUser({ role: 'monitor' });
+    monitor = createUser({ role: 'county' });
     assignRegions(monitor, [dsm]);
   });
 
@@ -81,6 +81,45 @@ describe('small-group suppression for partner users', () => {
     expect(row(region.body.items, 'district_id', tmk).suppressed).toBeUndefined();
   });
 
+  it('suppresses small counties in the national list for national users', async () => {
+    // Dar es Salaam has 11 respondents; two small regions are hidden as 'small'.
+    const mwz = createRegion('MWZ', 'Mwanza');
+    const aru = createRegion('ARU', 'Arusha');
+    const one = (regionId: number) => addResponse({ userId: createUser(), regionId, level: 2 });
+    one(mwz); one(aru); one(aru);
+    const nat = createUser({ role: 'national' });
+    const res = await get('/reports/national', nat);
+    expect(res.status).toBe(200);
+    expect(row(res.body.items, 'region_id', mwz)).toMatchObject(HIDDEN);
+    expect(row(res.body.items, 'region_id', aru)).toMatchObject(HIDDEN);
+    expect(row(res.body.items, 'region_id', dsm)).toMatchObject({ respondents: 11 });
+    expect(row(res.body.items, 'region_id', dsm).suppressed).toBeUndefined();
+
+    const asAdmin = await get('/reports/national', admin);
+    expect(row(asAdmin.body.items, 'region_id', mwz)).toMatchObject({ respondents: 1 });
+  });
+
+  it('hides one small county in the national list together with a complementary one', async () => {
+    const mwz = createRegion('MWZ', 'Mwanza');
+    const aru = createRegion('ARU', 'Arusha');
+    addResponse({ userId: createUser(), regionId: mwz, level: 2 });
+    for (let i = 0; i < 4; i++) addResponse({ userId: createUser(), regionId: aru, level: 2 });
+    const res = await get('/reports/national', createUser({ role: 'national' }));
+    expect(row(res.body.items, 'region_id', mwz).suppressed).toBe('small');
+    expect(row(res.body.items, 'region_id', aru).suppressed).toBe('complementary');
+    expect(row(res.body.items, 'region_id', dsm).suppressed).toBeUndefined();
+  });
+
+  it('applies the same suppression to sub-county coordinators', async () => {
+    const sub = createSubcounty(tmk);
+    const district = await get(`/reports/districts/${tmk}`, sub);
+    expect(district.status).toBe(200);
+    expect(row(district.body.items, 'facility_name', 'Temeke Dispensary A')).toMatchObject(HIDDEN);
+    expect(row(district.body.items, 'facility_id', f1).suppressed).toBeUndefined();
+    const facility = await get(`/reports/facilities/${f1}`, sub);
+    expect(row(facility.body.items, 'department_id', mic)).toMatchObject(HIDDEN);
+  });
+
   it('does not hide anything from admins', async () => {
     const res = await get(`/reports/facilities/${f1}`, admin);
     expect(row(res.body.items, 'department_id', mic))
@@ -88,9 +127,9 @@ describe('small-group suppression for partner users', () => {
     expect(row(res.body.items, 'department_id', mic).suppressed).toBeUndefined();
   });
 
-  it('does not hide anything from staff', async () => {
-    const staff = createUser({ facilityId: f1 });
-    const res = await get(`/reports/facilities/${f1}`, staff);
+  it('does not hide anything from facility admins', async () => {
+    const fadmin = createUser({ role: 'facility_admin', facilityId: f1 });
+    const res = await get(`/reports/facilities/${f1}`, fadmin);
     expect(row(res.body.items, 'department_id', mic)).toMatchObject({ respondents: 2 });
   });
 
@@ -133,7 +172,7 @@ describe('small-group suppression for partner users', () => {
     const fn = createFacility('FN', 'Nyamagana Clinic', { regionId: mwz, districtId: nya });
     addResponse({ userId: createUser({ facilityId: fn }), facilityId: fn, regionId: mwz, districtId: nya, level: 2 });
     addResponse({ userId: createUser({ facilityId: fn }), facilityId: fn, regionId: mwz, districtId: nya, level: 3 });
-    const other = createUser({ role: 'monitor' });
+    const other = createUser({ role: 'county' });
     assignRegions(other, [mwz]);
     const asPartner = await get(`/reports/regions/${mwz}`, other);
     expect(asPartner.body.meta.total_respondents).toBe(2);
@@ -204,7 +243,7 @@ describe('small-group suppression for partner users', () => {
     };
     resp(fA, 3); resp(fD, 4); resp(fOld, 2);
     execute("UPDATE facilities SET archived_at = datetime('now') WHERE id IN (?, ?)", [fOld, fEmpty]);
-    const partner = createUser({ role: 'monitor' });
+    const partner = createUser({ role: 'county' });
     assignRegions(partner, [mwz]);
 
     const res = await get(`/reports/districts/${nya}`, partner);
