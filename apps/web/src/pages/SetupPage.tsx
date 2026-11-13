@@ -54,6 +54,7 @@ import { ImportWorkbookDialog } from "@/components/import/ImportWorkbookDialog";
 import { listKey, listPath, isArchived, ARCHIVED_HINT } from "@/lib/setup/archived";
 import { DistrictsTab } from "@/components/setup/DistrictsTab";
 import { groupDistrictsByRegion, type District } from "@/lib/setup/districts";
+import { useOrgLabels } from "@/store/config";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -309,6 +310,7 @@ function SimpleTableTab<T extends SimpleRow>({
 
 function FacilitiesTab() {
   const qc = useQueryClient();
+  const { region, district } = useOrgLabels();
   const [sheetOpen, setSheetOpen] = useState(false);
   const [editing, setEditing] = useState<Facility | null>(null);
   const [deleteId, setDeleteId] = useState<number | null>(null);
@@ -387,7 +389,7 @@ function FacilitiesTab() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!districtId) { toast.error("Select a district."); return; }
+    if (!districtId) { toast.error(`Select a ${district.lower}.`); return; }
     setLoading(true);
     const body = {
       code: code.trim().toUpperCase(),
@@ -418,7 +420,7 @@ function FacilitiesTab() {
           <Input
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
-            placeholder="Search code, name, type, district, region…"
+            placeholder={`Search code, name, type, ${district.lower}, ${region.lower}…`}
             className="h-8 pl-7 text-sm"
           />
         </div>
@@ -439,8 +441,8 @@ function FacilitiesTab() {
               <TableHead className="w-24 text-xs uppercase tracking-wide">Code</TableHead>
               <TableHead className="text-xs uppercase tracking-wide">Name</TableHead>
               <TableHead className="text-xs uppercase tracking-wide">Type</TableHead>
-              <TableHead className="text-xs uppercase tracking-wide">District</TableHead>
-              <TableHead className="text-xs uppercase tracking-wide">Region</TableHead>
+              <TableHead className="text-xs uppercase tracking-wide">{district.one}</TableHead>
+              <TableHead className="text-xs uppercase tracking-wide">{region.one}</TableHead>
               <TableHead className="w-20 text-xs uppercase tracking-wide">Depts</TableHead>
               <TableHead className="w-20 text-right text-xs uppercase tracking-wide">Actions</TableHead>
             </TableRow>
@@ -517,10 +519,10 @@ function FacilitiesTab() {
                 <Label className="text-right text-sm">Type</Label>
                 <Input value={facilityType} onChange={(e) => setFacilityType(e.target.value)} placeholder="e.g. Hospital" />
 
-                <Label className="text-right text-sm">District</Label>
+                <Label className="text-right text-sm">{district.one}</Label>
                 <Select value={districtId} onValueChange={setDistrictId}>
                   <SelectTrigger className="text-sm">
-                    <SelectValue placeholder="Select district…" />
+                    <SelectValue placeholder={`Select ${district.lower}…`} />
                   </SelectTrigger>
                   <SelectContent>
                     {districtGroups.map((g) => (
@@ -534,9 +536,9 @@ function FacilitiesTab() {
                   </SelectContent>
                 </Select>
 
-                <Label className="text-right text-sm text-muted-foreground">Region</Label>
+                <Label className="text-right text-sm text-muted-foreground">{region.one}</Label>
                 <span className="text-sm text-muted-foreground">
-                  {districts.find((d) => String(d.id) === districtId)?.region_name ?? "Set by district"}
+                  {districts.find((d) => String(d.id) === districtId)?.region_name ?? `Set by ${district.lower}`}
                 </span>
               </div>
 
@@ -688,6 +690,11 @@ const SETUP_IMPORT_HINT = (
 
 export default function SetupPage() {
   const qc = useQueryClient();
+  const { region, district } = useOrgLabels();
+  const tabLabel = (tab: string) =>
+    tab === "regions" ? region.many : tab === "districts" ? district.many
+    : tab === "roles" ? "Org Roles" : tab === "titles" ? "Job Titles"
+    : tab.charAt(0).toUpperCase() + tab.slice(1);
   const [importOpen, setImportOpen] = useState(false);
   const [manual, setManual] = useState(false);
 
@@ -734,7 +741,7 @@ export default function SetupPage() {
                     value={tab}
                     className="capitalize rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none px-3 h-10"
                   >
-                    {tab === "roles" ? "Org Roles" : tab === "titles" ? "Job Titles" : tab.charAt(0).toUpperCase() + tab.slice(1)}
+                    {tabLabel(tab)}
                   </TabsTrigger>
                 ))}
               </TabsList>
@@ -748,7 +755,7 @@ export default function SetupPage() {
                   createFn={regionsFns.createFn}
                   updateFn={regionsFns.updateFn}
                   deleteFn={regionsFns.deleteFn}
-                  sheetTitle={(e) => e ? "Edit Region" : "New Region"}
+                  sheetTitle={(e) => e ? `Edit ${region.one}` : `New ${region.one}`}
                 />
               </TabsContent>
 
