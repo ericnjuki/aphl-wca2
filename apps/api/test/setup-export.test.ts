@@ -4,7 +4,7 @@ import { execute } from '../src/db/database';
 import { XLSX_MIME, loadWorkbook } from '../src/lib/workbook/xlsx';
 import {
   initTestDb, resetDb, testApp, asUser, createUser, createRegion, createDistrict, createFacility, createDepartment,
-  createOrgRole, createTitle, assignRegions, addResponse, binaryParser, USERS_HEADER,
+  createOrgRole, createTitle, createCounty, createSubcounty, addResponse, binaryParser, USERS_HEADER,
 } from './helpers';
 import type * as ExcelJS from 'exceljs';
 
@@ -45,10 +45,12 @@ describe('country setup export', () => {
     expect((users.getCell('A1').fill as { pattern?: string }).pattern).toBe('solid');            // required
     expect((users.getCell('F1').fill as { pattern?: string } | undefined)?.pattern).not.toBe('solid'); // optional
     expect(users.getCell('E2').dataValidation).toMatchObject({ type: 'list', formulae: ['"NRC,Passport,Other"'] });
-    expect(users.getCell('F2').dataValidation).toMatchObject({ type: 'list', formulae: ['"staff,admin,monitor"'] });
-    expect(users.getCell('L2').dataValidation).toMatchObject({ type: 'list', formulae: ['"active,disabled"'] });
-    expect(users.getCell('M2').value).toMatch(/^user\d+$/);
-    expect((users.getCell('M2').fill as { fgColor?: { argb?: string } }).fgColor?.argb).toBe('FFEDEDED');
+    expect(users.getCell('F2').dataValidation).toMatchObject({
+      type: 'list', formulae: ['"staff,admin,national,county,subcounty,facility_admin"'],
+    });
+    expect(users.getCell('M2').dataValidation).toMatchObject({ type: 'list', formulae: ['"active,disabled"'] });
+    expect(users.getCell('N2').value).toMatch(/^user\d+$/);
+    expect((users.getCell('N2').fill as { fgColor?: { argb?: string } }).fgColor?.argb).toBe('FFEDEDED');
   });
 
   it('exports only active organisation entities', async () => {
@@ -72,8 +74,11 @@ describe('country setup export', () => {
     const mls = createOrgRole('MLS', 'Medical Laboratory Scientist');
     const dr = createTitle('DR', 'Dr.');
     createUser({ facilityId: f1, departmentId: lab, orgRoleId: mls, titleId: dr, idType: 'NRC' });
-    const partner = createUser({ role: 'monitor', idType: 'Passport' });
-    assignRegions(partner, [dsm, mwz]);
+    // Every non-admin role, with its placement.
+    createCounty(mwz);
+    createSubcounty(tmk);
+    createUser({ role: 'national', idType: 'Passport' });
+    createUser({ role: 'facility_admin', facilityId: f1 });
     // A disabled user who still points at an archived facility.
     const leaver = createUser({ facilityId: f9, enabled: false });
     addResponse({ userId: leaver, facilityId: f9, regionId: dsm, districtId: tmk, departmentId: lab });

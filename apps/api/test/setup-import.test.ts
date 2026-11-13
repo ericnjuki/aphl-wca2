@@ -41,8 +41,9 @@ describe('country setup import endpoints', () => {
     Users: [
       USERS_HEADER,
       userSheetRow(admin),
-      ['amina@example.test', 'Amina', 'Hassan', '111', 'NRC', 'staff', 'F1', 'MIC', 'MLS', 'DR', '', ''],
-      ['pat@ngo.test', 'Pat', 'Partner', '222', 'Passport', 'monitor', '', '', '', '', 'DSM;MWZ', ''],
+      ['amina@example.test', 'Amina', 'Hassan', '111', 'NRC', 'staff', 'F1', 'MIC', 'MLS', 'DR', '', '', ''],
+      ['pat@county.test', 'Pat', 'County', '222', 'Passport', 'county', '', '', '', '', 'DSM', '', ''],
+      ['sam@county.test', 'Sam', 'Subcounty', '333', 'NRC', 'subcounty', '', '', '', '', '', 'NYA', ''],
     ],
   });
 
@@ -51,7 +52,7 @@ describe('country setup import endpoints', () => {
     expect(res.status).toBe(200);
     expect(res.body.plan.canApply).toBe(true);
     expect(res.body.plan.tabs.map((t: { tab: string; counts: { added: number } }) => [t.tab, t.counts.added])).toEqual([
-      ['Regions', 2], ['Districts', 2], ['Departments', 2], ['Facilities', 2], ['Org Roles', 1], ['Job Titles', 1], ['Users', 2],
+      ['Regions', 2], ['Districts', 2], ['Departments', 2], ['Facilities', 2], ['Org Roles', 1], ['Job Titles', 1], ['Users', 3],
     ]);
     expect(query('SELECT id FROM regions')).toHaveLength(0);
     expect(query('SELECT id FROM users')).toHaveLength(1);
@@ -75,18 +76,26 @@ describe('country setup import endpoints', () => {
        WHERE f.code = 'F1' ORDER BY dp.code`,
     ).map((r) => r.code)).toEqual(['LAB', 'MIC']);
 
-    expect(res.body.credentials).toHaveLength(2);
+    expect(res.body.credentials).toHaveLength(3);
     const amina = res.body.credentials.find((c: { email: string }) => c.email === 'amina@example.test');
     expect(amina).toMatchObject({ name: 'Amina Hassan', username: 'amina.hassan' });
     const [row] = query<Record<string, unknown>>('SELECT * FROM users WHERE email = ?', ['amina@example.test']);
     expect(bcrypt.compareSync(amina.temp_password, String(row.password))).toBe(true);
     expect(row).toMatchObject({ role: 'staff', is_first_login: 1, is_enabled: 1, temp_password: amina.temp_password });
 
-    const [pat] = query<{ id: number }>('SELECT id FROM users WHERE email = ?', ['pat@ngo.test']);
+    const [pat] = query<{ id: number; role: string }>('SELECT id, role FROM users WHERE email = ?', ['pat@county.test']);
+    expect(pat.role).toBe('county');
     expect(query<{ code: string }>(
-      'SELECT r.code FROM user_regions ur JOIN regions r ON r.id = ur.region_id WHERE ur.user_id = ? ORDER BY r.code',
+      'SELECT r.code FROM user_regions ur JOIN regions r ON r.id = ur.region_id WHERE ur.user_id = ?',
       [pat.id],
-    ).map((r) => r.code)).toEqual(['DSM', 'MWZ']);
+    ).map((r) => r.code)).toEqual(['DSM']);
+    const [sam] = query<{ id: number; role: string }>('SELECT id, role FROM users WHERE email = ?', ['sam@county.test']);
+    expect(sam.role).toBe('subcounty');
+    expect(query<{ code: string }>(
+      'SELECT d.code FROM user_districts ud JOIN districts d ON d.id = ud.district_id WHERE ud.user_id = ?',
+      [sam.id],
+    ).map((r) => r.code)).toEqual(['NYA']);
+    expect(query('SELECT user_id FROM user_regions WHERE user_id = ?', [sam.id])).toHaveLength(0);
 
     const [me] = query<Record<string, unknown>>('SELECT user_name, password FROM users WHERE id = ?', [admin]);
     expect(me).toEqual({ user_name: expect.stringMatching(/^user\d+$/), password: 'x' });
@@ -199,7 +208,7 @@ describe('country setup import endpoints', () => {
     const [before] = query<{ password: string; user_name: string }>('SELECT password, user_name FROM users WHERE id = ?', [leaver]);
     const [row] = query<Record<string, string>>('SELECT first_name, last_name, national_id FROM users WHERE id = ?', [leaver]);
     const buf = await buildWorkbook({
-      Users: [USERS_HEADER, userSheetRow(admin), ['leaver@example.test', row.first_name, row.last_name, row.national_id, 'NRC', 'staff', '', '', '', '', '', 'disabled']],
+      Users: [USERS_HEADER, userSheetRow(admin), ['leaver@example.test', row.first_name, row.last_name, row.national_id, 'NRC', 'staff', '', '', '', '', '', '', 'disabled']],
     });
     const { body } = await preview(buf);
     expect((await apply(buf, body.plan.fingerprint)).status).toBe(200);
@@ -269,8 +278,8 @@ describe('country setup import endpoints', () => {
     const buf = await buildWorkbook({
       Users: [
         USERS_HEADER, userSheetRow(admin),
-        ['one@example.test', 'One', 'A', '222', 'NRC', 'staff', '', '', '', '', '', 'active'],
-        ['two@example.test', 'Two', 'B', '111', 'NRC', 'staff', '', '', '', '', '', 'active'],
+        ['one@example.test', 'One', 'A', '222', 'NRC', 'staff', '', '', '', '', '', '', 'active'],
+        ['two@example.test', 'Two', 'B', '111', 'NRC', 'staff', '', '', '', '', '', '', 'active'],
       ],
     });
     const { body } = await preview(buf);

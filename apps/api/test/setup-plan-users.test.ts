@@ -6,7 +6,7 @@ import { planSetupImport } from '../src/lib/workbook/setup-planner';
 import { ImportPlan, TabPlan } from '../src/lib/workbook/plan';
 import {
   initTestDb, resetDb, buildWorkbook, SheetData, createRegion, createDistrict, createFacility, createDepartment,
-  createUser, createOrgRole, createTitle, USERS_HEADER, userSheetRow,
+  createUser, createOrgRole, createTitle, createCounty, createSubcounty, USERS_HEADER, userSheetRow,
 } from './helpers';
 
 async function planFor(sheets: SheetData, actor: number): Promise<ImportPlan> {
@@ -43,8 +43,8 @@ describe('country setup plan — users', () => {
       Users: [
         [...USERS_HEADER, 'username'],
         [...userSheetRow(admin), 'whatever'],
-        ['amina@example.test', 'Amina', 'Hassan-Juma', '123', 'nrc', '', 'f1', 'lab', '', '', '', '', 'hacker'],
-        ['new@example.test', 'New', 'Person', '999', 'Passport', 'staff', 'F1', 'LAB', '', '', '', 'active', ''],
+        ['amina@example.test', 'Amina', 'Hassan-Juma', '123', 'nrc', '', 'f1', 'lab', '', '', '', '', '', 'hacker'],
+        ['new@example.test', 'New', 'Person', '999', 'Passport', 'staff', 'F1', 'LAB', '', '', '', '', 'active', ''],
       ],
     }, admin);
     const u = tab(plan, 'Users');
@@ -83,7 +83,7 @@ describe('country setup plan — users', () => {
   it('re-enables a disabled user whose row has no status', async () => {
     const off = createUser({ email: 'off@example.test', enabled: false });
     const row = userSheetRow(off);
-    row[11] = '';
+    row[12] = '';
     const u = tab(await planFor(users(userSheetRow(staff), row), admin), 'Users');
     expect(u.changes).toEqual([
       { row: 4, key: 'off@example.test', kind: 'update', fields: [{ field: 'status', from: 'disabled', to: 'active' }] },
@@ -98,29 +98,80 @@ describe('country setup plan — users', () => {
 
   it('rejects values outside the allowed sets but accepts an unchanged legacy id_type', async () => {
     // The admin row keeps its legacy id_type "NIN" and is accepted.
-    const u = tab(await planFor(users(['a@x.test', 'A', 'A', '1', 'Licence', 'boss', '', '', '', '', '', 'gone']), admin), 'Users');
+    const u = tab(await planFor(users(['a@x.test', 'A', 'A', '1', 'Licence', 'boss', '', '', '', '', '', '', 'gone']), admin), 'Users');
     expect(u.errors).toEqual([
       { row: 3, column: 'id_type', message: 'id_type must be one of NRC, Passport, Other' },
-      { row: 3, column: 'system_role', message: 'system_role must be one of staff, admin, monitor' },
+      {
+        row: 3, column: 'system_role',
+        message: 'system_role must be one of staff, admin, national, county, subcounty, facility_admin',
+      },
       { row: 3, column: 'status', message: 'status must be one of active, disabled' },
     ]);
   });
 
-  it('enforces partner (monitor) placement rules', async () => {
+  it('accepts every role value, case-insensitively, and rejects the retired monitor role', async () => {
     const u = tab(await planFor(users(
-      ['m1@x.test', 'M', 'One', 'm1', 'NRC', 'monitor', '', '', '', '', '', ''],
-      ['m2@x.test', 'M', 'Two', 'm2', 'NRC', 'monitor', 'F1', '', '', '', 'DSM', ''],
-      ['s1@x.test', 'S', 'One', 's1', 'NRC', 'staff', '', '', '', '', 'DSM', ''],
-      ['m3@x.test', 'M', 'Three', 'm3', 'NRC', 'monitor', '', '', '', '', 'dsm;ZZZ', ''],
+      ['n@x.test', 'N', 'N', 'n1', 'NRC', 'National', '', '', '', '', '', '', ''],
+      ['c@x.test', 'C', 'C', 'c1', 'NRC', 'COUNTY', '', '', '', '', 'dsm', '', ''],
+      ['s@x.test', 'S', 'S', 's1', 'NRC', 'subcounty', '', '', '', '', '', 'tmk', ''],
+      ['f@x.test', 'F', 'F', 'f1', 'NRC', 'facility_admin', 'F1', '', '', '', '', '', ''],
+      ['m@x.test', 'M', 'M', 'm1', 'NRC', 'monitor', '', '', '', '', 'DSM', '', ''],
+    ), admin), 'Users');
+    expect(u.errors).toEqual([{
+      row: 7, column: 'system_role',
+      message: 'system_role must be one of staff, admin, national, county, subcounty, facility_admin',
+    }]);
+    const adds = u.changes.filter((c) => c.kind === 'add');
+    expect(adds.map((c) => c.fields?.find((f) => f.field === 'system_role')?.to)).toEqual(
+      ['national', 'county', 'subcounty', 'facility_admin'],
+    );
+    expect(adds[1].fields).toContainEqual({ field: 'region_codes', from: '', to: 'DSM' });
+    expect(adds[2].fields).toContainEqual({ field: 'district_codes', from: '', to: 'TMK' });
+  });
+
+  it('enforces coordinator placement: one region for county, one district for subcounty', async () => {
+    createRegion('ARU', 'Arusha');
+    const u = tab(await planFor(users(
+      ['c1@x.test', 'C', 'One', 'c1', 'NRC', 'county', '', '', '', '', '', '', ''],
+      ['c2@x.test', 'C', 'Two', 'c2', 'NRC', 'county', '', '', '', '', 'DSM;ARU', '', ''],
+      ['c3@x.test', 'C', 'Three', 'c3', 'NRC', 'county', '', '', '', '', 'ZZZ', '', ''],
+      ['s1@x.test', 'S', 'One', 's1', 'NRC', 'staff', '', '', '', '', 'DSM', '', ''],
+      ['sc1@x.test', 'S', 'C1', 'sc1', 'NRC', 'subcounty', '', '', '', '', '', '', ''],
+      ['sc2@x.test', 'S', 'C2', 'sc2', 'NRC', 'subcounty', '', '', '', '', 'DSM', 'TMK', ''],
+      ['sc3@x.test', 'S', 'C3', 'sc3', 'NRC', 'subcounty', '', '', '', '', '', 'NOPE', ''],
+      ['s2@x.test', 'S', 'Two', 's2', 'NRC', 'staff', '', '', '', '', '', 'TMK', ''],
     ), admin), 'Users');
     expect(u.errors).toEqual([
-      { row: 3, column: 'region_codes', message: 'A partner (monitor) user needs at least one region in region_codes' },
-      { row: 4, column: null, message: 'Partner (monitor) users cannot have a facility, department, org role or title' },
-      { row: 5, column: 'region_codes', message: 'Only partner (monitor) users can have region_codes' },
+      { row: 3, column: 'region_codes', message: 'A county user needs exactly one region code in region_codes' },
+      { row: 4, column: 'region_codes', message: 'A county user needs exactly one region code in region_codes' },
       {
-        row: 6, column: 'region_codes',
+        row: 5, column: 'region_codes',
         message: 'region_codes "ZZZ" is not an active region in the database (no Regions tab in this workbook)',
       },
+      { row: 6, column: 'region_codes', message: 'Only county users can have region_codes' },
+      { row: 7, column: 'district_codes', message: 'A subcounty user needs exactly one district code in district_codes' },
+      { row: 8, column: 'region_codes', message: 'Only county users can have region_codes' },
+      {
+        row: 9, column: 'district_codes',
+        message: 'district_codes "NOPE" is not an active district in the database (no Districts tab in this workbook)',
+      },
+      { row: 10, column: 'district_codes', message: 'Only subcounty users can have district_codes' },
+    ]);
+  });
+
+  it('keeps national and coordinator users off facilities, and needs a facility for facility_admin', async () => {
+    const u = tab(await planFor(users(
+      ['n1@x.test', 'N', 'One', 'n1', 'NRC', 'national', 'F1', '', '', '', '', '', ''],
+      ['c1@x.test', 'C', 'One', 'c1', 'NRC', 'county', 'F1', 'LAB', '', '', 'DSM', '', ''],
+      ['sc1@x.test', 'S', 'C1', 'sc1', 'NRC', 'subcounty', 'F1', '', '', '', '', 'TMK', ''],
+      ['fa1@x.test', 'F', 'One', 'fa1', 'NRC', 'facility_admin', '', '', '', '', '', '', ''],
+    ), admin), 'Users');
+    const offFacility = 'National, county and subcounty users cannot have a facility, department, org role or title';
+    expect(u.errors).toEqual([
+      { row: 3, column: null, message: offFacility },
+      { row: 4, column: null, message: offFacility },
+      { row: 5, column: null, message: offFacility },
+      { row: 6, column: 'facility_code', message: 'A facility_admin user needs a facility_code' },
     ]);
   });
 
@@ -128,11 +179,11 @@ describe('country setup plan — users', () => {
     createFacility('F9', 'Old Clinic', { regionId: dsm, districtId: tmk });
     execute("UPDATE facilities SET archived_at = datetime('now') WHERE code = 'F9'");
     const u = tab(await planFor(users(
-      ['a@x.test', 'A', 'A', 'a1', 'NRC', 'staff', 'F1', 'MIC', '', '', '', ''],
-      ['b@x.test', 'B', 'B', 'b1', 'NRC', 'staff', '', 'LAB', '', '', '', ''],
-      ['c@x.test', 'C', 'C', 'c1', 'NRC', 'staff', 'F9', '', '', '', '', ''],
-      ['d@x.test', 'D', 'D', 'd1', 'NRC', 'staff', 'F9', '', '', '', '', 'disabled'],
-      ['e@x.test', 'E', 'E', 'e1', 'NRC', 'staff', 'F1', '', 'NOPE', '', '', ''],
+      ['a@x.test', 'A', 'A', 'a1', 'NRC', 'staff', 'F1', 'MIC', '', '', '', '', ''],
+      ['b@x.test', 'B', 'B', 'b1', 'NRC', 'staff', '', 'LAB', '', '', '', '', ''],
+      ['c@x.test', 'C', 'C', 'c1', 'NRC', 'staff', 'F9', '', '', '', '', '', ''],
+      ['d@x.test', 'D', 'D', 'd1', 'NRC', 'staff', 'F9', '', '', '', '', '', 'disabled'],
+      ['e@x.test', 'E', 'E', 'e1', 'NRC', 'staff', 'F1', '', 'NOPE', '', '', '', ''],
     ), admin), 'Users');
     expect(u.errors).toEqual([
       { row: 3, column: 'department_code', message: 'Department "MIC" is not one of facility "F1"\'s departments' },
@@ -151,10 +202,10 @@ describe('country setup plan — users', () => {
   it('keeps national_id + id_type unique, including against users outside the workbook', async () => {
     createUser({ email: 'keep@example.test', nationalId: '555', idType: 'NRC', enabled: false });
     const u = tab(await planFor(users(
-      ['a@x.test', 'A', 'A', '777', 'NRC', '', '', '', '', '', '', ''],
-      ['b@x.test', 'B', 'B', '777', 'nrc', '', '', '', '', '', '', ''],
-      ['c@x.test', 'C', 'C', '555', 'NRC', '', '', '', '', '', '', ''],
-      ['d@x.test', 'D', 'D', '777', 'Passport', '', '', '', '', '', '', ''],
+      ['a@x.test', 'A', 'A', '777', 'NRC', '', '', '', '', '', '', '', ''],
+      ['b@x.test', 'B', 'B', '777', 'nrc', '', '', '', '', '', '', '', ''],
+      ['c@x.test', 'C', 'C', '555', 'NRC', '', '', '', '', '', '', '', ''],
+      ['d@x.test', 'D', 'D', '777', 'Passport', '', '', '', '', '', '', '', ''],
     ), admin), 'Users');
     expect(u.errors).toEqual([
       { row: 4, column: 'national_id', message: 'national_id "777" with id_type "NRC" is already used by row 3 (a@x.test)' },
@@ -164,8 +215,8 @@ describe('country setup plan — users', () => {
 
   it('rejects duplicate emails', async () => {
     const u = tab(await planFor(users(
-      ['a@x.test', 'A', 'A', 'a1', 'NRC', '', '', '', '', '', '', ''],
-      ['A@X.test', 'A', 'B', 'a2', 'NRC', '', '', '', '', '', '', ''],
+      ['a@x.test', 'A', 'A', 'a1', 'NRC', '', '', '', '', '', '', '', ''],
+      ['A@X.test', 'A', 'B', 'a2', 'NRC', '', '', '', '', '', '', '', ''],
     ), admin), 'Users');
     expect(u.errors).toEqual([{ row: 4, column: 'email', message: 'Duplicate email "A@X.test" — first used on row 3' }]);
   });
@@ -183,7 +234,7 @@ describe('country setup plan — users', () => {
     expect(demoted.errors).toContainEqual({ row: 2, column: 'system_role', message: 'You cannot remove your own admin role' });
 
     const disabledRow = userSheetRow(admin);
-    disabledRow[11] = 'disabled';
+    disabledRow[12] = 'disabled';
     const disabled = tab(await planFor({ Users: [USERS_HEADER, disabledRow] }, admin), 'Users');
     expect(disabled.errors).toContainEqual({ row: 2, column: 'status', message: 'You cannot disable your own account' });
   });
@@ -209,7 +260,7 @@ describe('country setup plan — users', () => {
 
   it('returns the operations apply needs', async () => {
     const parsed = await readSetupWorkbook(await buildWorkbook(users(
-      ['new@example.test', 'New', 'Person', '999', 'Passport', '', '', '', '', '', '', ''],
+      ['new@example.test', 'New', 'Person', '999', 'Passport', '', '', '', '', '', '', '', ''],
     )));
     const { ops } = planSetupImport(parsed, loadSetupSnapshot(), admin);
     expect(ops.users).toEqual([
@@ -218,7 +269,7 @@ describe('country setup plan — users', () => {
         values: {
           email: 'new@example.test', first_name: 'New', last_name: 'Person', national_id: '999', id_type: 'Passport',
           system_role: 'staff', status: 'active', facility_code: '', department_code: '', org_role_code: '', title_code: '',
-          region_codes: '',
+          region_codes: '', district_codes: '',
         },
       },
       expect.objectContaining({ kind: 'disable', id: staff }),
@@ -227,7 +278,7 @@ describe('country setup plan — users', () => {
   it('plans enabled-to-disabled via status as a disable and counts it', async () => {
     const other = createUser({ email: 'other@example.test' });
     const row = userSheetRow(other);
-    row[11] = 'disabled';
+    row[12] = 'disabled';
     const plan = await planFor(users(userSheetRow(staff), row), admin);
     const u = tab(plan, 'Users');
     expect(u.changes).toEqual([
@@ -242,7 +293,7 @@ describe('country setup plan — users', () => {
     const a = createUser(), b = createUser();
     const rowA = userSheetRow(a), rowB = userSheetRow(b);
     const rowS = userSheetRow(staff);
-    rowA[11] = 'disabled'; rowB[11] = 'disabled'; rowS[11] = 'disabled';
+    rowA[12] = 'disabled'; rowB[12] = 'disabled'; rowS[12] = 'disabled';
     const u = tab(await planFor(users(rowS, rowA, rowB), admin), 'Users');
     expect(u.warnings).toContain('3 of 4 active users would be disabled — this usually means the wrong file.');
   });
@@ -254,15 +305,15 @@ describe('country setup plan — users', () => {
   });
 
   it('blocks apply on errors, orders the tabs and fingerprints deterministically', async () => {
-    const bad = await planFor(users(['a@x.test', 'A', 'A', '1', 'Licence', '', '', '', '', '', '', '']), admin);
+    const bad = await planFor(users(['a@x.test', 'A', 'A', '1', 'Licence', '', '', '', '', '', '', '', '']), admin);
     expect(bad.canApply).toBe(false);
     expect(bad.tabs.map((t) => t.tab)).toEqual([
       'Regions', 'Districts', 'Departments', 'Facilities', 'Org Roles', 'Job Titles', 'Users',
     ]);
-    const row = ['n@x.test', 'N', 'P', '9', 'NRC', '', '', '', '', '', '', ''];
+    const row = ['n@x.test', 'N', 'P', '9', 'NRC', '', '', '', '', '', '', '', ''];
     const one = await planFor(users(row), admin);
     const two = await planFor(users(row), admin);
-    const changed = await planFor(users(['n@x.test', 'N', 'Q', '9', 'NRC', '', '', '', '', '', '', '']), admin);
+    const changed = await planFor(users(['n@x.test', 'N', 'Q', '9', 'NRC', '', '', '', '', '', '', '', '']), admin);
     expect(two.fingerprint).toBe(one.fingerprint);
     expect(changed.fingerprint).not.toBe(one.fingerprint);
   });
@@ -274,35 +325,60 @@ describe('country setup plan — users', () => {
     expect(u.errors).toContainEqual({ row: 2, column: 'id_type', message: 'id_type must be one of NRC, Passport, Other' });
   });
 
-  it('keeps partners free of org role and title, and leaves valid partners unchanged', async () => {
+  it('keeps coordinators free of org role and title, and leaves valid coordinators unchanged', async () => {
     createOrgRole('SUP', 'Supervisor');
     createTitle('MT', 'Med Tech');
     const bad = tab(await planFor(users(
-      ['m1@x.test', 'M', 'One', 'm1', 'NRC', 'monitor', '', '', 'SUP', '', 'DSM', ''],
-      ['m2@x.test', 'M', 'Two', 'm2', 'NRC', 'monitor', '', '', '', 'MT', 'DSM', ''],
+      ['c1@x.test', 'C', 'One', 'c1', 'NRC', 'county', '', '', 'SUP', '', 'DSM', '', ''],
+      ['s1@x.test', 'S', 'One', 's1', 'NRC', 'subcounty', '', '', '', 'MT', '', 'TMK', ''],
     ), admin), 'Users');
+    const offFacility = 'National, county and subcounty users cannot have a facility, department, org role or title';
     expect(bad.errors).toEqual([
-      { row: 3, column: null, message: 'Partner (monitor) users cannot have a facility, department, org role or title' },
-      { row: 4, column: null, message: 'Partner (monitor) users cannot have a facility, department, org role or title' },
+      { row: 3, column: null, message: offFacility },
+      { row: 4, column: null, message: offFacility },
     ]);
 
-    const mon = createUser({ role: 'monitor', email: 'mon@example.test' });
-    execute('INSERT INTO user_regions (user_id, region_id) VALUES (?, ?)', [mon, dsm]);
-    const ok = tab(await planFor(users(userSheetRow(staff), userSheetRow(mon)), admin), 'Users');
+    const county = createCounty(dsm);
+    const sub = createSubcounty(tmk);
+    const national = createUser({ role: 'national' });
+    const fa = createUser({ role: 'facility_admin', facilityId: f1 });
+    const ok = tab(await planFor(users(
+      userSheetRow(staff), userSheetRow(county), userSheetRow(sub), userSheetRow(national), userSheetRow(fa),
+    ), admin), 'Users');
     expect(ok.errors).toEqual([]);
     expect(ok.changes).toEqual([]);
-    expect(ok.counts.unchanged).toBe(3);
+    expect(ok.counts.unchanged).toBe(6);
+  });
+
+  it('moves a subcounty coordinator to another district and clears it when they become staff', async () => {
+    createDistrict('KIN', 'Kinondoni', dsm);
+    const sub = createSubcounty(tmk);
+    const moved = userSheetRow(sub);
+    moved[11] = 'KIN';
+    const u = tab(await planFor(users(userSheetRow(staff), moved), admin), 'Users');
+    expect(u.changes).toEqual([{
+      row: 4, key: expect.any(String), kind: 'update', fields: [{ field: 'district_codes', from: 'TMK', to: 'KIN' }],
+    }]);
+
+    const demoted = userSheetRow(sub);
+    demoted[5] = 'staff'; demoted[11] = '';
+    const d = tab(await planFor(users(userSheetRow(staff), demoted), admin), 'Users');
+    expect(d.errors).toEqual([]);
+    expect(d.changes[0].fields).toEqual([
+      { field: 'system_role', from: 'subcounty', to: 'staff' },
+      { field: 'district_codes', from: 'TMK', to: '' },
+    ]);
   });
 
   it('matches an email differing only in case from an existing user instead of adding it', async () => {
-    const u = tab(await planFor(users(['AMINA@EXAMPLE.TEST', 'Amina', 'Hassan', '123', 'NRC', '', 'F1', 'LAB', '', '', '', '']), admin), 'Users');
+    const u = tab(await planFor(users(['AMINA@EXAMPLE.TEST', 'Amina', 'Hassan', '123', 'NRC', '', 'F1', 'LAB', '', '', '', '', '']), admin), 'Users');
     expect(u.counts.added).toBe(0);
     expect(u.errors).toEqual([]);
   });
 
   it('returns an update op keeping the database spelling of the email', async () => {
     const parsed = await readSetupWorkbook(await buildWorkbook(users(
-      ['AMINA@example.test', 'Amina', 'Hassan-Juma', '123', 'NRC', '', 'F1', 'LAB', '', '', '', ''],
+      ['AMINA@example.test', 'Amina', 'Hassan-Juma', '123', 'NRC', '', 'F1', 'LAB', '', '', '', '', ''],
     )));
     const { ops } = planSetupImport(parsed, loadSetupSnapshot(), admin);
     expect(ops.users).toEqual([
