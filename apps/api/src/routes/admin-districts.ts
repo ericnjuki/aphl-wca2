@@ -7,7 +7,7 @@ import { requireAdmin } from '../middleware/auth';
 import { createError } from '../middleware/errorHandler';
 import { syncFacilitiesRegion } from '../lib/org';
 import { assertNoHistory } from '../lib/history';
-import { REGION, DISTRICT } from '../lib/org-labels';
+import { REGION, DISTRICT, COORDINATOR } from '../lib/org-labels';
 
 interface DistrictRow extends Record<string, unknown> {
   id: number; code: string; name: string; region_id: number;
@@ -98,6 +98,12 @@ router.delete('/:id', requireAdmin, (req: Request, res: Response, next: NextFunc
     const [{ n }] = query<{ n: number }>('SELECT COUNT(*) AS n FROM facilities WHERE district_id = ?', [id]);
     if (n > 0)
       return next(createError(`${plural(n, 'facility is', 'facilities are')} still assigned to this ${DISTRICT.lower}`, 409));
+    // FKs aren't enforced: a deleted district would leave its coordinator assigned to nothing.
+    const [{ m }] = query<{ m: number }>('SELECT COUNT(*) AS m FROM user_districts WHERE district_id = ?', [id]);
+    if (m > 0) {
+      const who = COORDINATOR.subcounty.toLowerCase();
+      return next(createError(`${plural(m, `${who} is`, `${who}s are`)} still assigned to this ${DISTRICT.lower}`, 409));
+    }
     execute('DELETE FROM districts WHERE id = ?', [id]);
     res.json({ message: 'Deleted' });
   } catch (err) { next(err); }
