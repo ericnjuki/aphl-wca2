@@ -178,7 +178,7 @@ function ReviewsPage() {
                     <TableHead className="text-xs uppercase tracking-wide">Domain</TableHead>
                     <TableHead className="w-20 text-right text-xs uppercase tracking-wide">Avg</TableHead>
                     <TableHead className="hidden md:table-cell text-xs uppercase tracking-wide">Completed</TableHead>
-                    <TableHead className="w-48 text-right text-xs uppercase tracking-wide" />
+                    <TableHead className="w-72 text-right text-xs uppercase tracking-wide" />
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -211,9 +211,32 @@ function ReviewsPage() {
                         {r.completed_at ? new Date(r.completed_at).toLocaleString() : '—'}
                       </TableCell>
                       <TableCell className="text-right">
-                        <Button size="sm" variant="outline" className="h-7 gap-1 text-xs">
-                          <Eye className="h-3 w-3" /> Review
-                        </Button>
+                        <div className="flex justify-end gap-1">
+                          <Button size="sm" variant="outline" className="h-7 gap-1 text-xs">
+                            <Eye className="h-3 w-3" /> Review
+                          </Button>
+                          {/* Quick actions skip the sheet; the API refuses self-review. */}
+                          {r.user_id !== myId && (
+                            <>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-7 gap-1 text-xs"
+                                onClick={(e) => { e.stopPropagation(); setDecision({ kind: 'approve', row: r }); setNotes(''); }}
+                              >
+                                <CheckCircle2 className="h-3 w-3" /> Approve
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-7 gap-1 text-xs"
+                                onClick={(e) => { e.stopPropagation(); setDecision({ kind: 'reject', row: r }); setNotes(''); }}
+                              >
+                                <XCircle className="h-3 w-3" /> Reject
+                              </Button>
+                            </>
+                          )}
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))}
