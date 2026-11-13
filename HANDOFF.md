@@ -11,11 +11,11 @@ _Updated: 2026-11-13_
 
 ## In progress
 
-`plans/2026-11-12-role-model.md`: all code and docs done. Waiting on user approval for the live test pass.
+`plans/2026-11-12-role-model.md`: all code and docs done. Live test pass deferred to next session by the user (2026-11-13).
 
 ## Next
 
-1. **On approval:** live Playwright pass, one login per role (admin, national, county, subcounty,
+1. **First task (user said "next sesh", 2026-11-13):** live Playwright pass, one login per role (admin, national, county, subcounty,
    facility_admin, staff): menu, report landing/limits, reviews scope + self-review block, Users page.
 2. At deploy: `ORG_LEVEL1_LABEL=County`, `ORG_LEVEL2_LABEL=Sub-county` in UAT/prod `.env`; existing
    `monitor` users need a new role (plan → Hard to reverse). Then email plan (TODO.md).
