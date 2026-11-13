@@ -1,7 +1,7 @@
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import request from 'supertest';
 import {
-  initTestDb, resetDb, testApp, asUser, createRegion, createDistrict, createFacility, createUser, addResponse,
+  initTestDb, resetDb, testApp, asUser, createRegion, createDistrict, createFacility, createUser, createSubcounty, addResponse,
 } from './helpers';
 
 const app = testApp();
@@ -63,10 +63,12 @@ describe('district reports', () => {
     });
   });
 
-  it('staff can see their own district only', async () => {
+  it('sub-county coordinators see their own district only; staff see none', async () => {
+    const sub = createSubcounty(tmk);
+    expect((await request(app).get(`/reports/districts/${tmk}`).set(asUser(sub))).status).toBe(200);
+    expect((await request(app).get(`/reports/districts/${ila}`).set(asUser(sub))).status).toBe(403);
     const staff = createUser({ facilityId: fTmk });
-    expect((await request(app).get(`/reports/districts/${tmk}`).set(asUser(staff))).status).toBe(200);
-    expect((await request(app).get(`/reports/districts/${ila}`).set(asUser(staff))).status).toBe(403);
+    expect((await request(app).get(`/reports/districts/${tmk}`).set(asUser(staff))).status).toBe(403);
   });
 
   it('keeps region counts consistent for a response whose snapshotted region disagrees with its district', async () => {

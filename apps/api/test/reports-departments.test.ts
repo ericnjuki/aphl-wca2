@@ -27,10 +27,10 @@ describe('department reports', () => {
     addResponse({ userId: bobB, facilityId: fB, regionId: dsm, departmentId: lab, level: 4 });
   });
 
-  it('staff only see respondents from their own facility', async () => {
-    const staff = createUser({ facilityId: fA });
+  it('facility admins only see respondents from their own facility', async () => {
+    const fadmin = createUser({ role: 'facility_admin', facilityId: fA });
     for (const url of [`/reports/departments/${lab}`, `/reports/departments/${lab}?facility_id=${fA}`]) {
-      const res = await request(app).get(url).set(asUser(staff));
+      const res = await request(app).get(url).set(asUser(fadmin));
       expect(res.status).toBe(200);
       expect(userIds(res.body)).toEqual([aliceA]);
       expect(res.body.meta.total_respondents).toBe(1);
@@ -38,10 +38,12 @@ describe('department reports', () => {
     }
   });
 
-  it('staff may not request another facility', async () => {
-    const staff = createUser({ facilityId: fA });
-    const res = await request(app).get(`/reports/departments/${lab}?facility_id=${fB}`).set(asUser(staff));
+  it('facility admins may not request another facility; staff get no department reports', async () => {
+    const fadmin = createUser({ role: 'facility_admin', facilityId: fA });
+    const res = await request(app).get(`/reports/departments/${lab}?facility_id=${fB}`).set(asUser(fadmin));
     expect(res.status).toBe(403);
+    const staff = createUser({ facilityId: fA });
+    expect((await request(app).get(`/reports/departments/${lab}`).set(asUser(staff))).status).toBe(403);
   });
 
   it('admin without facility_id keeps the cross-facility view', async () => {

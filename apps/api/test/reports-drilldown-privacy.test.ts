@@ -20,7 +20,7 @@ describe('partner drill-down privacy', () => {
     resetDb();
     region = createRegion('DSM', 'Dar es Salaam');
     admin = createUser({ role: 'admin' });
-    partner = createUser({ role: 'monitor' });
+    partner = createUser({ role: 'county' });
     assignRegions(partner, [region]);
   });
 

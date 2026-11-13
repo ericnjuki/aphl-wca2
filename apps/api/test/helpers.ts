@@ -11,6 +11,7 @@ import assessmentsRouter from '../src/routes/assessments';
 import configRouter from '../src/routes/config';
 import { workbookToBuffer } from '../src/lib/workbook/xlsx';
 import { errorHandler } from '../src/middleware/errorHandler';
+import type { Role } from '../src/lib/roles';
 
 export async function initTestDb(): Promise<void> {
   const db = await getDb();
@@ -18,7 +19,7 @@ export async function initTestDb(): Promise<void> {
 }
 
 const TABLES = [
-  'user_regions', 'user_assessment_responses', 'user_assessments', 'facility_departments',
+  'user_regions', 'user_districts', 'user_assessment_responses', 'user_assessments', 'facility_departments',
   'facilities', 'districts', 'regions', 'departments', 'users', 'org_roles', 'user_titles',
 ];
 
@@ -87,7 +88,7 @@ export function createDepartment(code: string, name: string, facilityIds: number
 }
 
 export function createUser(opts: {
-  role?: 'admin' | 'staff' | 'monitor';
+  role?: Role;
   facilityId?: number | null;
   departmentId?: number | null;
   orgRoleId?: number | null;
@@ -156,6 +157,26 @@ export function assignRegions(userId: number, regionIds: number[]): void {
   }
 }
 
+export function assignDistricts(userId: number, districtIds: number[]): void {
+  for (const did of districtIds) {
+    execute('INSERT INTO user_districts (user_id, district_id) VALUES (?, ?)', [userId, did]);
+  }
+}
+
+/** A county coordinator for one region. */
+export function createCounty(regionId: number): number {
+  const id = createUser({ role: 'county' });
+  assignRegions(id, [regionId]);
+  return id;
+}
+
+/** A sub-county coordinator for one district. */
+export function createSubcounty(districtId: number): number {
+  const id = createUser({ role: 'subcounty' });
+  assignDistricts(id, [districtId]);
+  return id;
+}
+
 
 export function createOrgRole(code: string, name: string): number {
   execute('INSERT INTO org_roles (code, name) VALUES (?, ?)', [code, name]);
@@ -192,7 +213,7 @@ export function binaryParser(res: NodeJS.ReadableStream, callback: (err: Error |
 
 export const USERS_HEADER = [
   'email', 'first_name', 'last_name', 'national_id', 'id_type', 'system_role', 'facility_code',
-  'department_code', 'org_role_code', 'title_code', 'region_codes', 'status',
+  'department_code', 'org_role_code', 'title_code', 'region_codes', 'district_codes', 'status',
 ];
 
 /** The Users-tab row (USERS_HEADER order) that leaves this user unchanged. */
@@ -201,7 +222,9 @@ export function userSheetRow(id: number): string[] {
     `SELECT u.email, u.first_name, u.last_name, u.national_id, u.id_type, u.role, u.is_enabled,
             f.code AS facility_code, d.code AS department_code, r.code AS org_role_code, t.code AS title_code,
             (SELECT GROUP_CONCAT(rg.code, ';') FROM user_regions ur JOIN regions rg ON rg.id = ur.region_id
-              WHERE ur.user_id = u.id) AS region_codes
+              WHERE ur.user_id = u.id) AS region_codes,
+            (SELECT GROUP_CONCAT(dt.code, ';') FROM user_districts ud JOIN districts dt ON dt.id = ud.district_id
+              WHERE ud.user_id = u.id) AS district_codes
      FROM users u
      LEFT JOIN facilities  f ON f.id = u.facility_id
      LEFT JOIN departments d ON d.id = u.department_id
@@ -213,6 +236,6 @@ export function userSheetRow(id: number): string[] {
   const s = (v: unknown) => (v === null || v === undefined ? '' : String(v));
   return [
     s(u.email), s(u.first_name), s(u.last_name), s(u.national_id), s(u.id_type), s(u.role), s(u.facility_code),
-    s(u.department_code), s(u.org_role_code), s(u.title_code), s(u.region_codes), u.is_enabled ? 'active' : 'disabled',
+    s(u.department_code), s(u.org_role_code), s(u.title_code), s(u.region_codes), s(u.district_codes), u.is_enabled ? 'active' : 'disabled',
   ];
 }
