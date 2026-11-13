@@ -54,10 +54,18 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { Checkbox } from "@/components/ui/checkbox";
-import { buildUserBody, type UserForm } from "@/lib/users/placement";
+import {
+  buildUserBody,
+  filterFacilities,
+  missingPlacement,
+  placementKind,
+  type UserForm,
+} from "@/lib/users/placement";
 import { api } from "@/lib/api";
+import { assignableRoles, USER_MANAGER_ROLES, type Role } from "@/lib/roles";
+import { useRoleLabel } from "@/hooks/useRoleLabel";
 import { useAuthStore } from "@/store/auth";
+import { useOrgLabels } from "@/store/config";
 
 const ENV = import.meta.env;
 const baseUrl = ENV.VITE_BASE_URL || "/";
@@ -68,11 +76,20 @@ interface Facility {
   id: number;
   code: string;
   name: string;
+  region_id: number | null;
+  district_id: number | null;
 }
 interface Region {
   id: number;
   code: string;
   name: string;
+}
+interface District {
+  id: number;
+  code: string;
+  name: string;
+  region_id: number;
+  region_name: string | null;
 }
 interface Department {
   id: number;
@@ -111,7 +128,34 @@ interface User {
   title_name: string | null;
   regions: { id: number; name: string }[];
   region_ids: number[];
+  districts: { id: number; name: string }[];
+  district_ids: number[];
   temp_password: string | null;
+}
+
+const EMPTY_FORM: UserForm = {
+  first_name: "",
+  last_name: "",
+  national_id: "",
+  id_type: "NRC",
+  email: "",
+  role: "staff",
+  facility_id: "",
+  department_id: "",
+  org_role_id: "",
+  title_id: "",
+  region_ids: [],
+  district_ids: [],
+  is_enabled: true,
+};
+
+/** Where a user sits: their county, sub-county or facility. */
+function placementName(u: User): string {
+  const kind = placementKind(u.role);
+  if (kind === "region") return u.regions.map((r) => r.name).join(", ") || "—";
+  if (kind === "district") return u.districts.map((d) => d.name).join(", ") || "—";
+  if (kind === "none") return "—";
+  return u.facility_name ?? "—";
 }
 
 // ── Temp password cell ────────────────────────────────────────────────────────
@@ -161,8 +205,11 @@ interface UserFormSheetProps {
   orgRoles: OrgRole[];
   titles: UserTitle[];
   regions: Region[];
+  districts: District[];
   onSaved: () => void;
 }
+
+const NONE = "__none__";
 
 function UserFormSheet({
   open,
@@ -173,22 +220,21 @@ function UserFormSheet({
   orgRoles,
   titles,
   regions,
+  districts,
   onSaved,
 }: UserFormSheetProps) {
-  const [form, setForm] = useState<UserForm>({
-    first_name: "",
-    last_name: "",
-    national_id: "",
-    id_type: "NRC",
-    email: "",
-    role: "staff",
-    facility_id: "",
-    department_id: "",
-    org_role_id: "",
-    title_id: "",
-    region_ids: [],
-    is_enabled: true,
-  });
+  const { user: me } = useAuthStore();
+  const roleLabel = useRoleLabel();
+  const { region, district } = useOrgLabels();
+  const isFacilityAdmin = me?.role === "facility_admin";
+  const roleOptions = assignableRoles(me?.role);
+  // The API refuses these for facility admins; don't offer them.
+  const lockRole = isFacilityAdmin && initial?.id === me?.id;
+
+  const [form, setForm] = useState<UserForm>(EMPTY_FORM);
+  // Cascade filters for the facility list (never saved).
+  const [filterRegion, setFilterRegion] = useState("");
+  const [filterDistrict, setFilterDistrict] = useState("");
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -200,26 +246,56 @@ function UserFormSheet({
         id_type: initial?.id_type ?? "NRC",
         email: initial?.email ?? "",
         role: initial?.role ?? "staff",
-        facility_id: initial?.facility_id ? String(initial.facility_id) : "",
+        facility_id: initial
+          ? initial.facility_id ? String(initial.facility_id) : ""
+          : isFacilityAdmin && me?.facility_id ? String(me.facility_id) : "",
         department_id: initial?.department_id
           ? String(initial.department_id)
           : "",
         org_role_id: initial?.org_role_id ? String(initial.org_role_id) : "",
         title_id: initial?.title_id ? String(initial.title_id) : "",
         region_ids: initial?.region_ids ?? [],
+        district_ids: initial?.district_ids ?? [],
         is_enabled: initial?.is_enabled ?? true,
       });
+      setFilterRegion("");
+      setFilterDistrict("");
     }
-  }, [open, initial]);
+  }, [open, initial, isFacilityAdmin, me?.facility_id]);
 
   const set =
     (field: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) =>
       setForm((f) => ({ ...f, [field]: e.target.value }));
 
+  const kind = placementKind(form.role);
+
+  const districtOptions = useMemo(
+    () => (filterRegion ? districts.filter((d) => d.region_id === Number(filterRegion)) : districts),
+    [districts, filterRegion],
+  );
+  const facilityOptions = useMemo(
+    () =>
+      filterFacilities(
+        facilities,
+        filterRegion ? Number(filterRegion) : null,
+        filterDistrict ? Number(filterDistrict) : null,
+      ),
+    [facilities, filterRegion, filterDistrict],
+  );
+  // Picking a filter drops a facility that no longer matches. Only when a filter
+  // is set: with none, an empty list just means the facilities are still loading.
+  useEffect(() => {
+    if (!filterRegion && !filterDistrict) return;
+    if (form.facility_id && !facilityOptions.some((f) => String(f.id) === form.facility_id))
+      setForm((f) => ({ ...f, facility_id: "" }));
+  }, [facilityOptions, form.facility_id, filterRegion, filterDistrict]);
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (form.role === "monitor" && form.region_ids.length === 0) {
-      toast.error("Select at least one region for a partner user.");
+    const missing = missingPlacement(form);
+    if (missing) {
+      const what = missing === "region" ? region.lower : missing === "district" ? district.lower : "facility";
+      toast.error(`Select a ${what} for a ${roleLabel(form.role).toLowerCase()}.`);
       return;
     }
     setLoading(true);
@@ -238,17 +314,34 @@ function UserFormSheet({
   }
 
   const selProps = (field: keyof typeof form) => ({
-    value: String(form[field]) || "__none__",
+    value: String(form[field]) || NONE,
     onValueChange: (v: string) =>
-      setForm((f) => ({ ...f, [field]: v === "__none__" ? "" : v })),
+      setForm((f) => ({ ...f, [field]: v === NONE ? "" : v })),
   });
 
-  const isMonitor = form.role === "monitor";
-  const toggleRegion = (rid: number, on: boolean) =>
-    setForm((f) => ({
-      ...f,
-      region_ids: on ? [...f.region_ids, rid] : f.region_ids.filter((x) => x !== rid),
-    }));
+  const idSelect = (
+    items: { id: number; code?: string; name: string }[],
+    value: string,
+    onChange: (v: string) => void,
+    noneLabel: string,
+    disabled = false,
+  ) => (
+    <Select value={value || NONE} onValueChange={(v) => onChange(v === NONE ? "" : v)} disabled={disabled}>
+      <SelectTrigger className="text-sm">
+        <SelectValue placeholder={noneLabel} />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectGroup>
+          <SelectItem value={NONE}>{noneLabel}</SelectItem>
+          {items.map((it) => (
+            <SelectItem key={it.id} value={String(it.id)} description={it.code}>
+              {it.name}
+            </SelectItem>
+          ))}
+        </SelectGroup>
+      </SelectContent>
+    </Select>
+  );
 
   return (
     <Sheet open={open} onOpenChange={(v) => !v && onClose()}>
@@ -307,128 +400,93 @@ function UserFormSheet({
               />
 
               <Label className="text-right text-sm">System Role</Label>
-              <Select {...selProps("role")}>
+              <Select {...selProps("role")} disabled={lockRole}>
                 <SelectTrigger className="text-sm">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="staff">Staff</SelectItem>
-                  <SelectItem value="admin">Admin</SelectItem>
-                  <SelectItem value="monitor">Partner (monitor)</SelectItem>
+                  {roleOptions.map((r) => (
+                    <SelectItem key={r} value={r}>
+                      {roleLabel(r)}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
 
-              {isMonitor && (
+              {kind === "region" && (
                 <>
-                  <Label className="self-start pt-1 text-right text-sm">Regions</Label>
-                  <div className="flex flex-col gap-2">
-                    {regions.length === 0 && (
-                      <span className="text-xs text-muted-foreground">No regions set up yet.</span>
-                    )}
-                    {regions.map((r) => (
-                      <label key={r.id} className="flex items-center gap-2 text-sm">
-                        <Checkbox
-                          checked={form.region_ids.includes(r.id)}
-                          onCheckedChange={(v) => toggleRegion(r.id, v === true)}
-                        />
-                        {r.name}
-                      </label>
-                    ))}
-                    <span className="text-xs text-muted-foreground">
-                      Partners see summary reports for these regions only.
-                    </span>
-                  </div>
-                </>
-              )}
-              {!isMonitor && (
-                <>
-                <Label className="text-right text-sm">Facility</Label>
-                <Select {...selProps("facility_id")}>
-                  <SelectTrigger className="text-sm">
-                    <SelectValue placeholder="— None —" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectGroup>
-                      <SelectItem value="__none__">— None —</SelectItem>
-                      {facilities.map((f) => (
-                        <SelectItem
-                          key={f.id}
-                          value={String(f.id)}
-                          description={f.code}
-                        >
-                          {f.name}
-                        </SelectItem>
-                      ))}
-                    </SelectGroup>
-                  </SelectContent>
-                </Select>
-
-                <Label className="text-right text-sm">Department</Label>
-                <Select {...selProps("department_id")}>
-                  <SelectTrigger className="text-sm">
-                    <SelectValue placeholder="— None —" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectGroup>
-                      <SelectItem value="__none__">— None —</SelectItem>
-                      {departments.map((d) => (
-                        <SelectItem
-                          key={d.id}
-                          value={String(d.id)}
-                          description={d.code}
-                        >
-                          {d.name}
-                        </SelectItem>
-                      ))}
-                    </SelectGroup>
-                  </SelectContent>
-                </Select>
-
-                <Label className="text-right text-sm">Org Role</Label>
-                <Select {...selProps("org_role_id")}>
-                  <SelectTrigger className="text-sm">
-                    <SelectValue placeholder="— None —" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectGroup>
-                      <SelectItem value="__none__">— None —</SelectItem>
-                      {orgRoles.map((r) => (
-                        <SelectItem
-                          key={r.id}
-                          value={String(r.id)}
-                          description={r.code}
-                        >
-                          {r.name}
-                        </SelectItem>
-                      ))}
-                    </SelectGroup>
-                  </SelectContent>
-                </Select>
-
-                <Label className="text-right text-sm">Job Title</Label>
-                <Select {...selProps("title_id")}>
-                  <SelectTrigger className="text-sm">
-                    <SelectValue placeholder="— None —" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectGroup>
-                      <SelectItem value="__none__">— None —</SelectItem>
-                      {titles.map((t) => (
-                        <SelectItem
-                          key={t.id}
-                          value={String(t.id)}
-                          description={t.code}
-                        >
-                          {t.name}
-                        </SelectItem>
-                      ))}
-                    </SelectGroup>
-                  </SelectContent>
-                </Select>
+                  <Label className="text-right text-sm">{region.one}</Label>
+                  {idSelect(
+                    regions,
+                    form.region_ids[0] ? String(form.region_ids[0]) : "",
+                    (v) => setForm((f) => ({ ...f, region_ids: v ? [Number(v)] : [] })),
+                    `— Select ${region.lower} —`,
+                  )}
                 </>
               )}
 
-              {initial && (
+              {kind === "district" && (
+                <>
+                  <Label className="text-right text-sm">{district.one}</Label>
+                  <Select
+                    value={form.district_ids[0] ? String(form.district_ids[0]) : NONE}
+                    onValueChange={(v) =>
+                      setForm((f) => ({ ...f, district_ids: v === NONE ? [] : [Number(v)] }))
+                    }
+                  >
+                    <SelectTrigger className="text-sm">
+                      <SelectValue placeholder={`— Select ${district.lower} —`} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectGroup>
+                        <SelectItem value={NONE}>{`— Select ${district.lower} —`}</SelectItem>
+                        {districts.map((d) => (
+                          <SelectItem key={d.id} value={String(d.id)} description={d.region_name ?? undefined}>
+                            {d.name}
+                          </SelectItem>
+                        ))}
+                      </SelectGroup>
+                    </SelectContent>
+                  </Select>
+                </>
+              )}
+
+              {kind === "facility" && (
+                <>
+                  {!isFacilityAdmin && (
+                    <>
+                      <Label className="text-right text-sm">{region.one}</Label>
+                      {idSelect(regions, filterRegion, (v) => {
+                        setFilterRegion(v);
+                        setFilterDistrict("");
+                      }, `— Any ${region.lower} —`)}
+
+                      <Label className="text-right text-sm">{district.one}</Label>
+                      {idSelect(districtOptions, filterDistrict, setFilterDistrict, `— Any ${district.lower} —`)}
+                    </>
+                  )}
+
+                  <Label className="text-right text-sm">Facility</Label>
+                  {idSelect(
+                    facilityOptions,
+                    form.facility_id,
+                    (v) => setForm((f) => ({ ...f, facility_id: v })),
+                    "— None —",
+                    isFacilityAdmin,
+                  )}
+
+                  <Label className="text-right text-sm">Department</Label>
+                  {idSelect(departments, form.department_id, (v) => setForm((f) => ({ ...f, department_id: v })), "— None —")}
+
+                  <Label className="text-right text-sm">Org Role</Label>
+                  {idSelect(orgRoles, form.org_role_id, (v) => setForm((f) => ({ ...f, org_role_id: v })), "— None —")}
+
+                  <Label className="text-right text-sm">Job Title</Label>
+                  {idSelect(titles, form.title_id, (v) => setForm((f) => ({ ...f, title_id: v })), "— None —")}
+                </>
+              )}
+
+              {initial && !isFacilityAdmin && (
                 <>
                   <Label className="text-right text-sm">Status</Label>
                   <Select
@@ -503,6 +561,10 @@ function ResetPasswordDialog({
 export default function UsersPage() {
   const { user: currentUser } = useAuthStore();
   const isAdmin = currentUser?.role === "admin";
+  const canManage =
+    currentUser != null && (USER_MANAGER_ROLES as readonly Role[]).includes(currentUser.role);
+  const roleLabel = useRoleLabel();
+  const { region, district } = useOrgLabels();
   const qc = useQueryClient();
 
   const [sheetOpen, setSheetOpen] = useState(false);
@@ -560,6 +622,14 @@ export default function UsersPage() {
       return r.data.regions;
     },
   });
+  const { data: districts = [] } = useQuery({
+    queryKey: ["admin", "districts"],
+    queryFn: async () => {
+      const r = await api.get<{ districts: District[] }>("/admin/districts");
+      if (r.error !== null) throw new Error(r.error);
+      return r.data.districts;
+    },
+  });
 
   const { data: users = [], isLoading } = useQuery({
     queryKey: ["admin", "users"],
@@ -568,7 +638,7 @@ export default function UsersPage() {
       if (res.error !== null) throw new Error(res.error);
       return res.data.users;
     },
-    enabled: isAdmin,
+    enabled: canManage,
   });
 
   const invalidate = () =>
@@ -585,9 +655,11 @@ export default function UsersPage() {
         u.email.toLowerCase().includes(q) ||
         (u.facility_name ?? "").toLowerCase().includes(q) ||
         u.regions.some((r) => r.name.toLowerCase().includes(q)) ||
+        u.districts.some((d) => d.name.toLowerCase().includes(q)) ||
+        roleLabel(u.role).toLowerCase().includes(q) ||
         (u.department_name ?? "").toLowerCase().includes(q),
     );
-  }, [users, searchInput]);
+  }, [users, searchInput, roleLabel]);
   const paged = useMemo(
     () => filtered.slice(page * pageSize, (page + 1) * pageSize),
     [filtered, page, pageSize],
@@ -620,17 +692,19 @@ export default function UsersPage() {
           onChange={(e) => setSearchInput(e.target.value)}
           placeholder="Search name, email, facility…"
           className="h-8 pl-7 text-sm"
-          disabled={!isAdmin}
+          disabled={!canManage}
         />
       </div>
       <div className="flex flex-1" />
-      {isAdmin && (
+      {canManage && (
         <div className="flex items-center gap-2">
-          <Button asChild size="sm" variant="outline" className="h-8 gap-1.5 text-xs">
-            <Link to={`${baseUrl}setup`} title="Bulk-import users with the country setup workbook">
-              <FileUp className="h-3.5 w-3.5" /> Bulk import on Setup
-            </Link>
-          </Button>
+          {isAdmin && (
+            <Button asChild size="sm" variant="outline" className="h-8 gap-1.5 text-xs">
+              <Link to={`${baseUrl}setup`} title="Bulk-import users with the country setup workbook">
+                <FileUp className="h-3.5 w-3.5" /> Bulk import on Setup
+              </Link>
+            </Button>
+          )}
           <Button
             size="sm"
             className="h-8 gap-1.5 text-xs"
@@ -649,9 +723,9 @@ export default function UsersPage() {
   return (
     <ContentLayout nav={navComponents()}>
       <div className="flex  flex-col min-h-[calc(100vh-26px-56px)] max-h-[calc(100vh-26px-56px)] w-full h-full">
-        {!isAdmin ? (
+        {!canManage ? (
           <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
-            Admin access required.
+            You don't have access to user management.
           </div>
         ) : (
           <>
@@ -669,7 +743,7 @@ export default function UsersPage() {
                       Email
                     </TableHead>
                     <TableHead className="text-xs uppercase tracking-wide">
-                      Facility / Regions
+                      Facility / {region.one} / {district.one}
                     </TableHead>
                     <TableHead className="text-xs uppercase tracking-wide">
                       Department
@@ -705,7 +779,9 @@ export default function UsersPage() {
                         className="py-8 text-center text-muted-foreground"
                       >
                         {users.length === 0
-                          ? "No users yet. Add one, or bulk-import users with the workbook on the Setup page."
+                          ? isAdmin
+                            ? "No users yet. Add one, or bulk-import users with the workbook on the Setup page."
+                            : "No users in your facility yet."
                           : "No users match your search."}
                       </TableCell>
                     </TableRow>
@@ -727,21 +803,20 @@ export default function UsersPage() {
                         </TableCell>
                         <TableCell className="text-xs">{u.email}</TableCell>
                         <TableCell className="text-xs text-muted-foreground">
-                          {u.role === "monitor"
-                            ? u.regions.map((r) => r.name).join(", ") || "—"
-                            : u.facility_name ?? "—"}
+                          {placementName(u)}
                         </TableCell>
                         <TableCell className="text-xs text-muted-foreground">
                           {u.department_name ?? "—"}
                         </TableCell>
                         <TableCell className="text-xs text-muted-foreground">
-                          {u.role === "monitor" ? (
-                            <Badge variant="outline" className="whitespace-nowrap text-[10px] uppercase">
-                              Partner
-                            </Badge>
-                          ) : (
-                            u.org_role_name ?? u.title_name ?? "—"
-                          )}
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            {u.role !== "staff" && (
+                              <Badge variant="outline" className="whitespace-nowrap text-[10px] uppercase">
+                                {roleLabel(u.role)}
+                              </Badge>
+                            )}
+                            {u.org_role_name ?? u.title_name ?? (u.role === "staff" ? "—" : null)}
+                          </div>
                         </TableCell>
                         <TableCell>
                           <Badge
@@ -821,6 +896,7 @@ export default function UsersPage() {
         orgRoles={orgRoles}
         titles={titles}
         regions={regions}
+        districts={districts}
         onSaved={invalidate}
       />
 
