@@ -17,23 +17,32 @@ Drill down by **clicking a bar** in the stacked chart or **any row** in the brea
 
 ## Who can see what
 
-- **Admin** users see all six levels: national, region, district, facility, department, and individual.
-- **Staff** (non-admin) see their own region, district and facility, departments within their facility, and individuals in their facility. They cannot open the national report or other regions.
-- **Partner (monitor)** users land on their region (or a "Your regions" list if
-  they have several) and can drill down to districts and facilities in those
-  regions. Department and individual reports are not available to them.
-  Partners only see approved submissions; pending and rejected ones are never
-  counted for them.
-  Rows with only 1 or 2 respondents are shown as "Fewer than 3 respondents";
-  hiding then continues ("Hidden for privacy") until the hidden rows together
-  cover at least 3 people, so a list's totals can't reveal them. Opening a hidden
-  district or facility shows a "hidden for privacy" notice instead of its numbers.
+Each role opens Reports on its own level and can drill down from there, but never up or sideways. ("Region" and "District" may be renamed for your deployment, e.g. *County* and *Sub-county*.)
+
+| Role | Lands on | Can open |
+|---|---|---|
+| Admin | National | every level, including individuals |
+| National | National | the national report only (no drill-down) |
+| Region coordinator | their region | their region, its districts and facilities |
+| District coordinator | their district | their district and its facilities |
+| Facility admin | their facility | their facility, its departments and individuals in it |
+| Staff | their own individual report | their own results only |
+
+A coordinator who hasn't been assigned a region or district yet sees a "not assigned" message; an admin has to assign one on the **Users** page.
+
+National users and coordinators get **summary-only** reports:
+
+- Only approved submissions count; pending and rejected ones are never counted for them.
+- Rows with only 1 or 2 respondents are shown as "Fewer than 3 respondents"; hiding then continues ("Hidden for privacy") until the hidden rows together cover at least 3 people, so a list's totals can't reveal them. This includes the national list of regions. Opening a hidden district or facility shows a "hidden for privacy" notice instead of its numbers.
+- Facility reports show no department breakdown, and department and individual reports are not available.
+
+The **Users** docs page has the full rules.
 
 ## Filters (top bar)
 
 - **All domains / domain picker** — restrict to one assessment framework
 - **All competencies** — (enabled after picking a domain) restrict to one competency within it
-- **Approved only** switch — default ON; turn OFF to include pending and rejected submissions in the aggregation (useful for pre-review previews). Partners always see approved submissions only — the switch is locked on for them.
+- **Approved only** switch — default ON; turn OFF to include pending and rejected submissions in the aggregation (useful for pre-review previews). National users and coordinators always see approved submissions only — the switch is locked on for them.
 
 ## Maturity legend
 

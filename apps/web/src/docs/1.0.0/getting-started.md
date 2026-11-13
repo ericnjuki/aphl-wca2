@@ -22,23 +22,29 @@ To change the organisation later, export the setup, edit it and import it again 
 
 - Open the **Survey** page, pick a domain, answer each competency.
 - If you get interrupted, close the tab. The in-progress session auto-saves and shows up on **My assessments** with a **Resume** button.
-- Once you submit, the assessment waits for admin review.
+- Once you submit, the assessment waits for review.
 
-## Daily use (admins)
+## Daily use (reviewers)
 
-- **Reviews** shows completed submissions awaiting your decision. Approve to include in reports, reject with notes to exclude.
+- **Reviews** shows completed submissions awaiting your decision (admins, district coordinators and facility admins). Approve to include in reports, reject with notes to exclude.
 - **Reports** shows aggregated maturity levels by region/district/facility/department/individual. Click any bar or row to drill down.
 
 ## Roles
 
-| Role  | Can see                                                  |
-|-------|----------------------------------------------------------|
-| admin | Everything — all reports, reviews, user/setup management |
-| staff | Own assessments, facility-scoped reports (no national)   |
+| Role | Can see |
+|---|---|
+| Admin | Everything: all reports, reviews, user and setup management |
+| National | The national report, summary only |
+| Region coordinator (e.g. *County*) | Their region and below, summary only |
+| District coordinator (e.g. *Sub-county*) | Their district and its facilities, summary only; reviews for their district |
+| Facility admin | Own assessments; their facility's reports, reviews and users |
+| Staff | Own assessments and own results |
+
+The **Users** docs page has the details.
 
 ## Tips
 
 - Pagination lives at the bottom of every large table. Use **Rows per page** if you want denser or lighter views.
 - Use the search box on Users and Reviews to narrow long lists.
-- Toggle **Approved only** on the Reports filter bar to see pending/rejected submissions too — useful when reviewing before approval (admins and staff only).
+- Toggle **Approved only** on the Reports filter bar to see pending/rejected submissions too — useful when reviewing before approval (not available to summary-only roles).
 - Most pages work on both dark and light theme; use the sun/moon icon in the top-right.

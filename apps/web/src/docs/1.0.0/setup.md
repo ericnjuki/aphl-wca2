@@ -26,12 +26,13 @@ Required columns are in **bold** (shaded in the exported file). The **Read me** 
 | Facilities | **facility_code**, **facility_name**, facility_type, **district_code**, department_codes |
 | Org Roles | **role_code**, **role_name** |
 | Job Titles | **title_code**, **title_name** |
-| Users | **email**, **first_name**, **last_name**, **national_id**, **id_type**, system_role, facility_code, department_code, org_role_code, title_code, region_codes, status, username |
+| Users | **email**, **first_name**, **last_name**, **national_id**, **id_type**, system_role, facility_code, department_code, org_role_code, title_code, region_codes, district_codes, status, username |
 
-- `department_codes` and `region_codes` take several codes separated by `;`.
-- `id_type` is `NRC`, `Passport` or `Other`; `system_role` is `staff` (default), `admin` or `monitor`; `status` is `active` (default) or `disabled`. The exported file offers these as dropdowns.
+- `department_codes` takes several codes separated by `;`.
+- `id_type` is `NRC`, `Passport` or `Other`; `system_role` is `staff` (default), `facility_admin`, `subcounty`, `county`, `national` or `admin` (the **Users** docs page explains each role); `status` is `active` (default) or `disabled`. The exported file offers these as dropdowns.
 - `username` is filled in on export and ignored on import.
 - A facility's region always comes from its district.
+- `county` and `subcounty` are the region and district coordinator roles. Tab names and column keys keep the words *region* and *district* even when your deployment shows them as *County* and *Sub-county*.
 
 ### How an import works
 
@@ -49,7 +50,8 @@ The preview has one section per tab with coloured counts (added, updated, restor
 - the same code or email appears twice, or two users share a national ID + ID type;
 - a code refers to something that is not in the workbook (or, for a tab you left out, not active in the system);
 - a user's department is not one of their facility's departments;
-- a partner (monitor) has no regions, or has a facility, department, org role or title — or a non-partner has regions;
+- a `county` user doesn't have exactly one code in `region_codes`, or a `subcounty` user exactly one in `district_codes`, or any other role has codes there;
+- a `national`, `county` or `subcounty` user has a facility, department, org role or title, or a `facility_admin` has no facility;
 - something would be archived or deleted while an active user, or an item you left unchanged, still uses it;
 - the import would disable or demote you, or leave no active admin.
 
@@ -57,13 +59,13 @@ Warnings do not block. Users being disabled — because they are missing from th
 
 ## Regions
 
-Top-level geographic groupings; a region aggregates every facility in it on the **National** report. Fields: `code` (unique), `name`. A region with districts, or assigned to a partner user, can't be deleted.
+Top-level geographic groupings; a region aggregates every facility in it on the **National** report. Fields: `code` (unique), `name`. A region with districts, or assigned to a region coordinator, can't be deleted.
 
 ## Districts
 
 Each district belongs to exactly one region, and every facility belongs to exactly one district.
 
-- A district with facilities can't be deleted; reassign the facilities first.
+- A district with facilities, or assigned to a district coordinator, can't be deleted; reassign the facilities (or the coordinator) first.
 - Moving a district to another region moves its facilities with it (historical responses keep the region they were submitted under).
 
 ## Facilities

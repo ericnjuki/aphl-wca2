@@ -27,7 +27,7 @@ Some terms in the questions are marked with a symbol (e.g. `*`, `‡`). Their de
 
 Click **Submit** on the last page. After submission:
 
-- The assessment enters `pending` review status (admin approval required before it counts in reports).
+- The assessment enters `pending` review status (a reviewer has to approve it before it counts in reports).
 - The **My assessments** page adds a completed card with your average score.
 - You can start the same domain again to record a newer snapshot.
 
