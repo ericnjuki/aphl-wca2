@@ -1,4 +1,6 @@
 import { useNavigate } from 'react-router-dom';
+import { useCanOpenLevel } from '@/hooks/useCanOpenLevel';
+import { useOrgLabels } from '@/store/config';
 import { useNationalReport } from '@/hooks/reports/useReportQueries';
 import { MaturityLegend } from '../MaturityLegend';
 import { MaturityStackedBar } from '../MaturityStackedBar';
@@ -15,6 +17,9 @@ const baseUrl = ENV.VITE_BASE_URL || '/';
 
 export function NationalReport() {
   const navigate = useNavigate();
+  const canOpen = useCanOpenLevel();
+  const { region } = useOrgLabels();
+  const openRegion = canOpen('region') ? (key: string) => navigate(`${baseUrl}reports/regions/${key}`) : undefined;
   const { data, isPending, isError, error } = useNationalReport();
 
   if (isPending) return <ChartSkeleton />;
@@ -45,11 +50,11 @@ export function NationalReport() {
         totalRespondents={data.meta.total_respondents}
         avgLevel={data.meta.avg_level}
         bucketsCovered={coveredRegions}
-        bucketsLabel="regions"
+        bucketsLabel={region.lowerMany}
       />
       <div className="rounded-sm border bg-background">
         <div className="flex items-center justify-between border-b px-3 py-2">
-          <h2 className="text-sm font-semibold">Regions</h2>
+          <h2 className="text-sm font-semibold">{region.many}</h2>
           <MaturityLegend />
         </div>
         <div id="report-bar-chart" className="p-3">
@@ -59,15 +64,15 @@ export function NationalReport() {
               label: archivedLabel(r.region_name, r.archived),
               ...r,
             }))}
-            onBarClick={(key) => navigate(`${baseUrl}reports/regions/${key}`)}
-            emptyText="No regions configured"
+            onBarClick={openRegion}
+            emptyText={`No ${region.lowerMany} configured`}
           />
         </div>
       </div>
       <MaturityBreakdownTable
         rows={data.items.map((r) => ({ key: String(r.region_id), label: archivedLabel(r.region_name, r.archived), ...r }))}
-        onRowClick={(key) => navigate(`${baseUrl}reports/regions/${key}`)}
-        labelHeader="Region"
+        onRowClick={openRegion}
+        labelHeader={region.one}
       />
     </div>
   );

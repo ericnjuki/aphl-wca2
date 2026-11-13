@@ -170,5 +170,13 @@
     "active": "Active",
     "inactive": "Inactive",
     "retired": "Retired"
+  },
+  "roles": {
+    "admin": "Admin",
+    "national": "National",
+    "county": "{{label}} coordinator",
+    "subcounty": "{{label}} coordinator",
+    "facility_admin": "Facility admin",
+    "staff": "Staff"
   }
 }

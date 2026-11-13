@@ -3,6 +3,7 @@ import { AlertTriangle } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { useAuthStore } from '@/store/auth';
+import { useOrgLabels, type LabelForms } from '@/store/config';
 import type { ReportLevel } from '@/types/reports';
 
 const ENV = import.meta.env;
@@ -13,22 +14,22 @@ interface Props {
   count: number;
 }
 
-const MESSAGES: Record<ReportLevel, { title: string; body: string; cta: string; to: string } | null> = {
+const messages = (region: LabelForms, district: LabelForms): Record<ReportLevel, { title: string; body: string; cta: string; to: string } | null> => ({
   national: {
-    title: 'respondents are not attributed to a region',
-    body:  "Those users don't have a facility assigned, so their responses don't appear in any regional bucket below. Assign them to a facility to include their data in reports.",
+    title: `respondents are not attributed to a ${region.lower}`,
+    body:  `Those users don't have a facility assigned, so their responses don't appear in any ${region.lower} bucket below. Assign them to a facility to include their data in reports.`,
     cta:   'Open Users',
     to:    `${baseUrl}users`,
   },
   region: {
-    title: "respondents aren't attributed to a district",
-    body:  "Their facility has no district yet (or they have no facility), so they don't appear in the district breakdown. Assign each facility a district in Setup.",
+    title: `respondents aren't attributed to a ${district.lower}`,
+    body:  `Their facility has no ${district.lower} yet (or they have no facility), so they don't appear in the ${district.lower} breakdown. Assign each facility a ${district.lower} in Setup.`,
     cta:   'Open Setup',
     to:    `${baseUrl}setup`,
   },
   district: {
-    title: 'respondents have no facility in this district',
-    body:  "These respondents report at the district level but haven't been placed in a facility. They don't roll up into the facility breakdown.",
+    title: `respondents have no facility in this ${district.lower}`,
+    body:  `These respondents report at the ${district.lower} level but haven't been placed in a facility. They don't roll up into the facility breakdown.`,
     cta:   'Open Users',
     to:    `${baseUrl}users`,
   },
@@ -40,13 +41,14 @@ const MESSAGES: Record<ReportLevel, { title: string; body: string; cta: string; 
   },
   department: null,
   individual: null,
-};
+});
 
 export function UnassignedBanner({ level, count }: Props) {
   const isAdmin = useAuthStore((s) => s.user?.role === 'admin');
+  const { region, district } = useOrgLabels();
   if (!isAdmin) return null;
   if (count <= 0) return null;
-  const spec = MESSAGES[level];
+  const spec = messages(region, district)[level];
   if (!spec) return null;
 
   return (

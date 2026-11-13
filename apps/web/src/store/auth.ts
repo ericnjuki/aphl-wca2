@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { api, onUnauthorized } from '@/lib/api';
+import type { Role } from '@/lib/roles';
 
 export interface AuthUser {
   id: number;
@@ -7,16 +8,19 @@ export interface AuthUser {
   first_name: string;
   last_name: string;
   user_name: string;
-  role: string;
+  role: Role;
   is_first_login: boolean;
   is_enabled: boolean;
   national_id: string;
   id_type: string;
   facility_id: number | null;
   department_id: number | null;
-  /** Assigned regions — partner (monitor) users only; empty otherwise. */
+  /** Assigned county (region) — county coordinators only; empty otherwise. */
   regions: { id: number; name: string }[];
   region_ids: number[];
+  /** Assigned sub-county (district) — sub-county coordinators only; empty otherwise. */
+  districts: { id: number; name: string; region_id: number }[];
+  district_ids: number[];
   created_at: string;
   updated_at: string;
 }

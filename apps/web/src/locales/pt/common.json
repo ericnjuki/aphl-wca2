@@ -133,5 +133,13 @@
     "light": "Claro",
     "dark": "Escuro",
     "system": "Sistema"
+  },
+  "roles": {
+    "admin": "Administrador",
+    "national": "Nacional",
+    "county": "Coordenador de {{label}}",
+    "subcounty": "Coordenador de {{label}}",
+    "facility_admin": "Administrador da unidade",
+    "staff": "Funcionário"
   }
 }

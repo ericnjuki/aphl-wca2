@@ -9,6 +9,12 @@ import {
   ListChecks,
   Settings2,
 } from "lucide-react";
+import {
+  FACILITY_ROLES,
+  REVIEWER_ROLES,
+  USER_MANAGER_ROLES,
+  type Role as UserRole,
+} from "@/lib/roles";
 
 type Submenu = {
   href: string;
@@ -24,7 +30,7 @@ type Menu = {
   submenus?: Submenu[];
   adminOnly?: boolean;
   /** If set, only these roles see the item. */
-  roles?: Exclude<Role, null>[];
+  roles?: readonly UserRole[];
 };
 
 type Group = {
@@ -35,7 +41,7 @@ type Group = {
 const ENV = import.meta.env;
 const baseUrl = ENV.VITE_BASE_URL || "/";
 
-export type Role = "admin" | "staff" | "monitor" | null;
+export type Role = UserRole | null;
 
 export function getMenuList(_pathname: string, role: Role = null): Group[] {
   const groups: Group[] = [
@@ -47,7 +53,7 @@ export function getMenuList(_pathname: string, role: Role = null): Group[] {
           label: "navigation.survey",
           icon: Form,
           submenus: [],
-          roles: ["admin", "staff"],
+          roles: FACILITY_ROLES,
         },
       ],
     },
@@ -58,7 +64,7 @@ export function getMenuList(_pathname: string, role: Role = null): Group[] {
           href: `${baseUrl}my-assessments`,
           label: "navigation.my_assessments",
           icon: ClipboardList,
-          roles: ["admin", "staff"],
+          roles: FACILITY_ROLES,
         },
         {
           href: `${baseUrl}reports`,
@@ -69,7 +75,7 @@ export function getMenuList(_pathname: string, role: Role = null): Group[] {
           href: `${baseUrl}reviews`,
           label: "navigation.reviews",
           icon: ListChecks,
-          adminOnly: true,
+          roles: REVIEWER_ROLES,
         },
       ],
     },
@@ -87,7 +93,7 @@ export function getMenuList(_pathname: string, role: Role = null): Group[] {
           href: `${baseUrl}users`,
           label: "navigation.users",
           icon: Users,
-          adminOnly: true,
+          roles: USER_MANAGER_ROLES,
         },
         {
           href: `${baseUrl}setup`,
@@ -117,8 +123,8 @@ export function getMenuList(_pathname: string, role: Role = null): Group[] {
       menus: g.menus.filter(
         (m) =>
           (!m.adminOnly || role === "admin") &&
-          // Unknown role (still loading) keeps the default non-admin menu.
-          (!m.roles || role === null || m.roles.includes(role)),
+          // Unknown role (still loading) keeps the default staff menu.
+          (!m.roles || m.roles.includes(role ?? "staff")),
       ),
     }))
     .filter((g) => g.menus.length > 0);

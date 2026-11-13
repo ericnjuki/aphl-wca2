@@ -1,4 +1,6 @@
 import { useNavigate } from 'react-router-dom';
+import { useCanOpenLevel } from '@/hooks/useCanOpenLevel';
+import { useOrgLabels } from '@/store/config';
 import { useDistrictReport } from '@/hooks/reports/useReportQueries';
 import { MaturityLegend } from '../MaturityLegend';
 import { MaturityStackedBar } from '../MaturityStackedBar';
@@ -16,6 +18,9 @@ interface Props { districtId: number }
 
 export function DistrictReport({ districtId }: Props) {
   const navigate = useNavigate();
+  const canOpen = useCanOpenLevel();
+  const { district } = useOrgLabels();
+  const openFacility = canOpen('facility') ? (key: string) => navigate(`${baseUrl}reports/facilities/${key}`) : undefined;
   const { data, isPending, isError, error } = useDistrictReport(districtId);
 
   if (isPending) return <ChartSkeleton />;
@@ -42,14 +47,14 @@ export function DistrictReport({ districtId }: Props) {
         <div id="report-bar-chart" className="p-3">
           <MaturityStackedBar
             data={data.items.map((r) => ({ key: String(r.facility_id), label: archivedLabel(r.facility_name, r.archived), ...r }))}
-            onBarClick={(key) => navigate(`${baseUrl}reports/facilities/${key}`)}
-            emptyText="No facilities in this district"
+            onBarClick={openFacility}
+            emptyText={`No facilities in this ${district.lower}`}
           />
         </div>
       </div>
       <MaturityBreakdownTable
         rows={data.items.map((r) => ({ key: String(r.facility_id), label: archivedLabel(r.facility_name, r.archived), ...r }))}
-        onRowClick={(key) => navigate(`${baseUrl}reports/facilities/${key}`)}
+        onRowClick={openFacility}
         labelHeader="Facility"
       />
     </div>

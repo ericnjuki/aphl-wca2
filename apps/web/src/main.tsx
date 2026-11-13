@@ -7,6 +7,8 @@ import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
 
 import "@/styles/index.css";
 import { useAuthStore, onSessionEnd } from "@/store/auth";
+import { isFacilityRole } from "@/lib/roles";
+import { useConfigStore } from "@/store/config";
 import { Toaster } from "@/components/ui/sonner";
 
 import {
@@ -26,6 +28,8 @@ const UsersPage = React.lazy(() => import("@/pages/UsersPage"));
 const SetupPage = React.lazy(() => import("@/pages/SetupPage"));
 const DocsPage = React.lazy(() => import("@/pages/DocsPage"));
 
+useConfigStore.getState().loadConfig();
+
 const queryClient = new QueryClient();
 onSessionEnd(() => queryClient.clear());
 const sqliteClient = new SQLiteClient();
@@ -33,10 +37,10 @@ const sqliteClient = new SQLiteClient();
 const ENV = import.meta.env;
 const baseUrl = ENV.VITE_BASE_URL || "/";
 
-// Partner (monitor) users never take assessments — their home is Reports.
+// Only facility roles take assessments; everyone else's home is Reports.
 function HomeRoute() {
-  const isMonitor = useAuthStore((s) => s.user?.role === "monitor");
-  return isMonitor ? <Navigate to={`${baseUrl}reports`} replace /> : <SurveyPage />;
+  const role = useAuthStore((s) => s.user?.role);
+  return role && !isFacilityRole(role) ? <Navigate to={`${baseUrl}reports`} replace /> : <SurveyPage />;
 }
 
 const router = createBrowserRouter([

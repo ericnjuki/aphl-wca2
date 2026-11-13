@@ -16,6 +16,7 @@ import { DomainSelect } from '@/components/filters/DomainSelect';
 import { CompetencySelect } from '@/components/filters/CompetencySelect';
 import { useReportsFiltersStore } from '@/store/reports-filters';
 import { useAuthStore } from '@/store/auth';
+import { isSummaryOnlyRole } from '@/lib/roles';
 import type { ReportLevel } from '@/types/reports';
 
 const ENV = import.meta.env;
@@ -34,8 +35,8 @@ export function ReportFilterBar({ level, crumbs = [], rightSlot }: Props) {
     useReportsFiltersStore();
   const navigate = useNavigate();
   const isAdmin = useAuthStore((s) => s.user?.role === 'admin');
-  // The API always applies approved-only for partners, so the switch is locked on.
-  const isMonitor = useAuthStore((s) => s.user?.role === 'monitor');
+  // The API always applies approved-only for summary-only roles, so the switch is locked on.
+  const summaryOnly = useAuthStore((s) => isSummaryOnlyRole(s.user?.role));
   // Suppress unused-var warning for useMatches import (kept for future breadcrumb auto-build)
   useMatches;
 
@@ -75,9 +76,9 @@ export function ReportFilterBar({ level, crumbs = [], rightSlot }: Props) {
             <div className="flex items-center gap-2 pl-2">
               <Switch
                 id="approved-only"
-                checked={isMonitor || approvedOnly}
+                checked={summaryOnly || approvedOnly}
                 onCheckedChange={setApprovedOnly}
-                disabled={isMonitor}
+                disabled={summaryOnly}
               />
               <Label htmlFor="approved-only" className="flex items-center gap-1 text-xs text-muted-foreground">
                 <ShieldCheck className="h-3 w-3" />
@@ -85,7 +86,7 @@ export function ReportFilterBar({ level, crumbs = [], rightSlot }: Props) {
               </Label>
             </div>
           </TooltipTrigger>
-          {isMonitor && <TooltipContent>Partners see approved submissions only</TooltipContent>}
+          {summaryOnly && <TooltipContent>Your role sees approved submissions only</TooltipContent>}
         </Tooltip>
 
         <div className="flex-1" />
