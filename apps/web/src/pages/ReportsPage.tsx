@@ -1,5 +1,7 @@
-import { MonitorRegions } from '@/components/reports/MonitorRegions';
-import { reportsLanding } from '@/lib/reports/landing';
+import { NotAssignedNotice } from '@/components/reports/NotAssignedNotice';
+import { canOpenLevel, reportsLanding } from '@/lib/reports/landing';
+import { useOrgLabels } from '@/store/config';
+import type { ReportLevel } from '@/types/reports';
 import { Navigate, useParams, useSearchParams } from 'react-router-dom';
 
 import { ContentLayout } from '@/components/admin-panel/content-layout';
@@ -20,7 +22,6 @@ import {
   useDepartmentReport,
   useIndividualReport,
 } from '@/hooks/reports/useReportQueries';
-import type { ReportLevel } from '@/types/reports';
 
 const ENV = import.meta.env;
 const baseUrl = ENV.VITE_BASE_URL || '/';
@@ -44,14 +45,15 @@ function ReportsPage() {
     : regionId != null     ? 'region'
     : 'national';
 
-  // Only admins may view the national report (enforced by report-scope on the
-  // API). Everyone else is redirected, or — partner users with several
-  // regions — shown a region picker.
+  // Only admins and national users may view the national report (enforced by
+  // report-scope on the API). Everyone else is redirected to their own unit, or
+  // shown a notice if they have none yet.
   const user = useAuthStore((s) => s.user);
-  const { redirect: redirectTarget, showRegionPicker } = reportsLanding(user, level, baseUrl);
+  const { region: regionLabel, district: districtLabel } = useOrgLabels();
+  const { redirect: redirectTarget, unassigned } = reportsLanding(user, level, baseUrl);
 
   // Fetch only the active level's data — other hooks stay disabled via null ids.
-  const national   = useNationalReport(redirectTarget == null && !showRegionPicker);
+  const national   = useNationalReport(redirectTarget == null && !unassigned);
   const region     = useRegionReport(regionId);
   const district   = useDistrictReport(districtId);
   const facility   = useFacilityReport(facilityId);
@@ -60,29 +62,31 @@ function ReportsPage() {
 
   if (redirectTarget) return <Navigate to={redirectTarget} replace />;
 
-  // Breadcrumb bits derived from the active query.
+  // Breadcrumb bits derived from the active query. Levels the role may not open
+  // (they would 403) render as plain text, not links.
   const crumbs: { label: string; to?: string }[] = [];
+  const crumbTo = (crumbLevel: ReportLevel, to: string) => (canOpenLevel(user?.role, crumbLevel) ? to : undefined);
   if (level === 'region' && region.data) {
     crumbs.push({ label: region.data.region.name });
   }
   if (level === 'district' && district.data) {
     const d = district.data.district;
-    crumbs.push({ label: d.region_name ?? 'Region', to: `${baseUrl}reports/regions/${d.region_id}` });
+    crumbs.push({ label: d.region_name ?? regionLabel.one, to: crumbTo('region', `${baseUrl}reports/regions/${d.region_id}`) });
     crumbs.push({ label: d.name });
   }
   if (level === 'facility' && facility.data) {
     const fac = facility.data.facility;
     if (fac.region_id) {
-      crumbs.push({ label: fac.region_name ?? 'Region', to: `${baseUrl}reports/regions/${fac.region_id}` });
+      crumbs.push({ label: fac.region_name ?? regionLabel.one, to: crumbTo('region', `${baseUrl}reports/regions/${fac.region_id}`) });
     }
     if (fac.district_id) {
-      crumbs.push({ label: fac.district_name ?? 'District', to: `${baseUrl}reports/districts/${fac.district_id}` });
+      crumbs.push({ label: fac.district_name ?? districtLabel.one, to: crumbTo('district', `${baseUrl}reports/districts/${fac.district_id}`) });
     }
     crumbs.push({ label: fac.name });
   }
   if (level === 'department' && department.data) {
     const fac = department.data.facility;
-    if (fac) crumbs.push({ label: fac.name, to: `${baseUrl}reports/facilities/${fac.id}` });
+    if (fac) crumbs.push({ label: fac.name, to: crumbTo('facility', `${baseUrl}reports/facilities/${fac.id}`) });
     crumbs.push({ label: department.data.department.name });
   }
   if (level === 'individual' && individual.data) {
@@ -105,11 +109,11 @@ function ReportsPage() {
         <ReportFilterBar
           level={level}
           crumbs={crumbs}
-          rightSlot={showRegionPicker ? undefined : <ExportMenu level={level} payload={exportPayload} />}
+          rightSlot={unassigned ? undefined : <ExportMenu level={level} payload={exportPayload} />}
         />
         <div className="flex-1">
-          {level === 'national'   && !showRegionPicker && <NationalReport />}
-          {level === 'national'   && showRegionPicker  && <MonitorRegions regions={user?.regions ?? []} />}
+          {level === 'national'   && !unassigned && <NationalReport />}
+          {level === 'national'   && unassigned  && <NotAssignedNotice />}
           {level === 'region'     && regionId     != null && <RegionReport     regionId={regionId}     />}
           {level === 'district'   && districtId   != null && <DistrictReport   districtId={districtId}   />}
           {level === 'facility'   && facilityId   != null && <FacilityReport   facilityId={facilityId} />}

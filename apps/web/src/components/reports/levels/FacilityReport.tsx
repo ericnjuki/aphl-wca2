@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom';
-import { useAuthStore } from '@/store/auth';
+import { useCanOpenLevel } from '@/hooks/useCanOpenLevel';
 import { useFacilityReport } from '@/hooks/reports/useReportQueries';
 import { MaturityLegend } from '../MaturityLegend';
 import { MaturityStackedBar } from '../MaturityStackedBar';
@@ -17,9 +17,9 @@ interface Props { facilityId: number }
 
 export function FacilityReport({ facilityId }: Props) {
   const navigate = useNavigate();
-  // Partner users can't open department reports (they list named people).
-  const isMonitor = useAuthStore((s) => s.user?.role === 'monitor');
-  const openDepartment = isMonitor
+  // Summary-only roles can't open department reports (they list named people).
+  const canOpen = useCanOpenLevel();
+  const openDepartment = !canOpen('department')
     ? undefined
     : (key: string) => navigate(`${baseUrl}reports/departments/${key}?facility_id=${facilityId}`);
   const { data, isPending, isError, error } = useFacilityReport(facilityId);

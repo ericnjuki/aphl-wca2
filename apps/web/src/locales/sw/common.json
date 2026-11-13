@@ -133,5 +133,13 @@
     "light": "Mwangaza",
     "dark": "Giza",
     "system": "Mfumo"
+  },
+  "roles": {
+    "admin": "Msimamizi",
+    "national": "Taifa",
+    "county": "Mratibu wa {{label}}",
+    "subcounty": "Mratibu wa {{label}}",
+    "facility_admin": "Msimamizi wa kituo",
+    "staff": "Mtumishi"
   }
 }

@@ -1,4 +1,5 @@
 import { useNavigate } from 'react-router-dom';
+import { useCanOpenLevel } from '@/hooks/useCanOpenLevel';
 import { useDepartmentReport } from '@/hooks/reports/useReportQueries';
 import { MaturityLegend } from '../MaturityLegend';
 import { MaturityStackedBar } from '../MaturityStackedBar';
@@ -13,6 +14,8 @@ interface Props { departmentId: number; facilityId: number | null }
 
 export function DepartmentReport({ departmentId, facilityId }: Props) {
   const navigate = useNavigate();
+  const canOpen = useCanOpenLevel();
+  const openUser = canOpen('individual') ? (key: string) => navigate(`${baseUrl}reports/users/${key}`) : undefined;
   const { data, isPending, isError, error } = useDepartmentReport(departmentId, facilityId);
 
   if (isPending) return <ChartSkeleton />;
@@ -40,7 +43,7 @@ export function DepartmentReport({ departmentId, facilityId }: Props) {
               label: r.full_name,
               ...r,
             }))}
-            onBarClick={(key) => navigate(`${baseUrl}reports/users/${key}`)}
+            onBarClick={openUser}
             emptyText="No respondents in this department yet"
             height={data.items.length * 32 + 60}
           />
@@ -53,7 +56,7 @@ export function DepartmentReport({ departmentId, facilityId }: Props) {
           meta: r.title_name,
           ...r,
         }))}
-        onRowClick={(key) => navigate(`${baseUrl}reports/users/${key}`)}
+        onRowClick={openUser}
         labelHeader="Person"
         metaHeader="Title"
       />
