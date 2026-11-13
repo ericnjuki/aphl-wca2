@@ -1,26 +1,13 @@
 import { useIndividualReport } from '@/hooks/reports/useReportQueries';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { MATURITY } from '@/lib/reports/maturity';
-import type { MaturityLevel } from '@/types/reports';
 import { MaturityLegend } from '../MaturityLegend';
+import { SubcompetencyDetailTable } from '../SubcompetencyDetailTable';
 import { MaturityBreakdownTable } from '../MaturityBreakdownTable';
 import { ChartSkeleton } from '../ChartSkeleton';
 import { CompetencyRadarChart } from '../charts/CompetencyRadarChart';
 
 interface Props { userId: number }
-
-function levelBadge(level: MaturityLevel) {
-  const spec = MATURITY[level];
-  return (
-    <span
-      className="inline-flex items-center rounded-sm px-1.5 py-0.5 text-[11px] font-medium text-white"
-      style={{ backgroundColor: spec.color }}
-    >
-      {spec.key}
-    </span>
-  );
-}
 
 export function IndividualReport({ userId }: Props) {
   const { data, isPending, isError, error } = useIndividualReport(userId);
@@ -123,28 +110,7 @@ export function IndividualReport({ userId }: Props) {
 
       <div className="rounded-sm border bg-background">
         <div className="border-b px-3 py-2 text-sm font-semibold">Detail by subcompetency</div>
-        <div className="max-h-[460px] overflow-auto">
-          <table className="w-full text-sm">
-            <thead className="sticky top-0 bg-muted/30 text-xs text-muted-foreground">
-              <tr>
-                <th className="px-3 py-2 text-left font-medium">Competency</th>
-                <th className="px-3 py-2 text-left font-medium">Subcompetency</th>
-                <th className="px-3 py-2 text-left font-medium">Level</th>
-                <th className="px-3 py-2 text-left font-medium hidden md:table-cell">Response</th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.subcompetencies.map((s, i) => (
-                <tr key={i} className="border-t">
-                  <td className="px-3 py-1.5 text-muted-foreground">{s.competency_text ?? s.competency_value}</td>
-                  <td className="px-3 py-1.5">{s.subcompetency_text ?? s.subcompetency_value}</td>
-                  <td className="px-3 py-1.5">{levelBadge(s.response_level)}</td>
-                  <td className="px-3 py-1.5 text-muted-foreground hidden md:table-cell">{s.response_text ?? '—'}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <SubcompetencyDetailTable rows={data.subcompetencies} />
       </div>
     </div>
   );

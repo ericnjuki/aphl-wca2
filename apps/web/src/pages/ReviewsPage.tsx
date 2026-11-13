@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { CheckCircle2, XCircle, ListChecks, Search } from 'lucide-react';
+import { CheckCircle2, XCircle, ListChecks, Search, Eye } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { ContentLayout } from '@/components/admin-panel/content-layout';
@@ -21,8 +21,16 @@ import { Label } from '@/components/ui/label';
 import {
   Empty, EmptyDescription, EmptyHeader, EmptyTitle,
 } from '@/components/ui/empty';
+import {
+  Sheet, SheetContent, SheetFooter, SheetHeader, SheetTitle,
+} from '@/components/ui/sheet';
+import { MaturityLegend } from '@/components/reports/MaturityLegend';
+import {
+  SubcompetencyDetailTable, type SubcompetencyDetailRow,
+} from '@/components/reports/SubcompetencyDetailTable';
 import { api } from '@/lib/api';
 import { formatAvgLevel } from '@/lib/reports/maturity';
+import { useAuthStore } from '@/store/auth';
 
 interface ReviewRow {
   id: number;                 // user_assessment id
@@ -37,8 +45,17 @@ interface ReviewRow {
   review_status: 'pending' | 'approved' | 'rejected';
 }
 
+interface ReviewDetail {
+  assessment: ReviewRow;
+  subcompetencies: SubcompetencyDetailRow[];
+}
+
+const metaLine = (r: ReviewRow) =>
+  [r.facility_name, r.department_name].filter(Boolean).join(' · ') || '—';
+
 function ReviewsPage() {
   const qc = useQueryClient();
+  const myId = useAuthStore((s) => s.user?.id ?? null);
   const { data, isPending, isError, error } = useQuery({
     queryKey: ['admin', 'reviews', 'pending'],
     queryFn: async () => {
@@ -54,6 +71,24 @@ function ReviewsPage() {
     | null
   >(null);
   const [notes, setNotes] = useState('');
+  // The submission open in the detail sheet.
+  const [openRow, setOpenRow] = useState<ReviewRow | null>(null);
+  const detail = useQuery({
+    queryKey: ['admin', 'reviews', 'detail', openRow?.id],
+    queryFn: async () => {
+      const res = await api.get<ReviewDetail>(`/admin/reviews/${openRow!.id}`);
+      if (res.error !== null) throw new Error(res.error);
+      return res.data;
+    },
+    enabled: openRow != null,
+  });
+  // The API refuses self-review; don't offer it.
+  const isOwn = openRow != null && openRow.user_id === myId;
+  const decide = (kind: 'approve' | 'reject') => {
+    if (!openRow) return;
+    setDecision({ kind, row: openRow });
+    setNotes('');
+  };
 
   const [searchInput, setSearchInput] = useState('');
   const [page, setPage] = useState(0);
@@ -89,11 +124,9 @@ function ReviewsPage() {
       toast.success(v.kind === 'approve' ? 'Submission approved' : 'Submission rejected');
       qc.invalidateQueries({ queryKey: ['admin', 'reviews'] });
       qc.invalidateQueries({ queryKey: ['reports'] });
-      // The reviewed user's "My assessments" shows review_status, so their
-      // page should update too — admins review their own submissions here
-      // in the demo setup.
+      // The reviewed user's "My assessments" shows review_status.
       qc.invalidateQueries({ queryKey: ['my-assessments'] });
-      setDecision(null); setNotes('');
+      setDecision(null); setNotes(''); setOpenRow(null);
     },
     onError: (e) => toast.error(`Action failed: ${(e as Error).message}`),
   });
@@ -158,11 +191,12 @@ function ReviewsPage() {
                   ) : paged.map((r) => (
                     <TableRow
                       key={r.id}
-                      className="transition-colors hover:bg-[rgba(70,130,180,0.08)]"
+                      className="cursor-pointer transition-colors hover:bg-[rgba(70,130,180,0.08)]"
+                      onClick={() => setOpenRow(r)}
                     >
                       <TableCell className="font-medium">{r.full_name}</TableCell>
                       <TableCell className="hidden md:table-cell text-muted-foreground text-xs">
-                        {[r.facility_name, r.department_name].filter(Boolean).join(' · ') || '—'}
+                        {metaLine(r)}
                       </TableCell>
                       <TableCell>
                         <div className="flex flex-col">
@@ -177,24 +211,9 @@ function ReviewsPage() {
                         {r.completed_at ? new Date(r.completed_at).toLocaleString() : '—'}
                       </TableCell>
                       <TableCell className="text-right">
-                        <div className="flex justify-end gap-1">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="h-7 gap-1 text-xs"
-                            onClick={() => { setDecision({ kind: 'approve', row: r }); setNotes(''); }}
-                          >
-                            <CheckCircle2 className="h-3 w-3" /> Approve
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="h-7 gap-1 text-xs"
-                            onClick={() => { setDecision({ kind: 'reject',  row: r }); setNotes(''); }}
-                          >
-                            <XCircle className="h-3 w-3" /> Reject
-                          </Button>
-                        </div>
+                        <Button size="sm" variant="outline" className="h-7 gap-1 text-xs">
+                          <Eye className="h-3 w-3" /> Review
+                        </Button>
                       </TableCell>
                     </TableRow>
                   ))}
@@ -217,6 +236,62 @@ function ReviewsPage() {
           </>
         )}
       </div>
+
+      <Sheet open={openRow != null} onOpenChange={(o) => { if (!o) setOpenRow(null); }}>
+        <SheetContent className="flex flex-col gap-0 sm:max-w-3xl">
+          <SheetHeader className="px-6 py-4 border-b">
+            <SheetTitle>{openRow?.full_name}</SheetTitle>
+            {openRow && (
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                <span>{metaLine(openRow)}</span>
+                <span>{openRow.domain_name} <span className="font-mono">({openRow.domain_code})</span></span>
+                <span>Avg <span className="font-mono">{formatAvgLevel(openRow.avg_level)}</span></span>
+                {openRow.completed_at && <span>Completed {new Date(openRow.completed_at).toLocaleString()}</span>}
+              </div>
+            )}
+          </SheetHeader>
+          <div className="flex flex-1 flex-col gap-3 overflow-hidden px-6 py-4">
+            <MaturityLegend />
+            {detail.isPending ? (
+              <div className="flex flex-col gap-2">
+                <Skeleton className="h-8 rounded-sm" />
+                <Skeleton className="h-8 rounded-sm" />
+                <Skeleton className="h-8 rounded-sm" />
+              </div>
+            ) : detail.isError ? (
+              <div className="text-sm text-destructive">Error: {(detail.error as Error).message}</div>
+            ) : (
+              <SubcompetencyDetailTable
+                rows={detail.data.subcompetencies}
+                className="flex-1 rounded-sm border"
+              />
+            )}
+          </div>
+          <SheetFooter className="mt-auto px-6 py-4 border-t">
+            {isOwn ? (
+              <span className="text-sm text-muted-foreground">
+                This is your own submission. Another reviewer has to approve or reject it.
+              </span>
+            ) : (
+              <>
+                <Button
+                  variant="outline"
+                  className="gap-1"
+                  onClick={() => decide('reject')}
+                >
+                  <XCircle className="h-4 w-4" /> Reject
+                </Button>
+                <Button
+                  className="gap-1"
+                  onClick={() => decide('approve')}
+                >
+                  <CheckCircle2 className="h-4 w-4" /> Approve
+                </Button>
+              </>
+            )}
+          </SheetFooter>
+        </SheetContent>
+      </Sheet>
 
       <Dialog open={decision != null} onOpenChange={(o) => { if (!o) { setDecision(null); setNotes(''); } }}>
         <DialogContent>
