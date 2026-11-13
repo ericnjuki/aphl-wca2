@@ -7,10 +7,10 @@ Your personal history page. Lists every assessment you've ever started, whether 
 | Badge             | Meaning                                                        |
 |-------------------|----------------------------------------------------------------|
 | `in_progress`     | You started this survey but haven't submitted it yet           |
-| `completed`       | Submitted — awaiting admin review                              |
-| `Pending review`  | Completed, admin hasn't decided yet                            |
-| `Approved`        | Admin approved — counted in reports                            |
-| `Rejected`        | Admin rejected with notes — not counted in reports             |
+| `completed`       | Submitted — awaiting review                              |
+| `Pending review`  | Completed, no reviewer has decided yet                            |
+| `Approved`        | Approved by a reviewer — counted in reports                            |
+| `Rejected`        | Rejected with notes — not counted in reports             |
 | `abandoned`       | You chose **Start over** on a previous draft                   |
 
 The right side shows the **AVG** score (1.0–4.0) for completed assessments.
