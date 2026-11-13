@@ -5,23 +5,20 @@ _Updated: 2026-11-13_
 
 ## Last session
 
-2026-11-13: live Playwright pass of the role model, one login per role + an unassigned county user.
-Menus, report landings, scope/403s, breadcrumbs, small-group suppression, reviews (scope, self-review
-block in UI + API, approve, reject-needs-notes) and the Users page (facility admin locks, edit save,
-admin role picker with Sub-county labels) all behave as planned. Three minor UI follow-ups found (TODO.md).
+2026-11-13 (2nd): fixed the three role-model UI follow-ups (78f8a39): national query gated to the
+national level, 4xx not retried, "You don't have access" notice for forbidden report URLs and
+`/reviews`. Live-checked with Playwright as county/staff/national/admin; web tests 72/72.
 
 ## In progress
 
-`plans/2026-11-12-role-model.md`: code, docs and live pass done. Remaining: the three 2026-11-13 TODO
-follow-ups (approved, not started), then deploy.
+`plans/2026-11-12-role-model.md`: all code, docs and live checks done. Only deploy remains.
 
 ## Next
 
-1. **First task (user approved the fixes 2026-11-13, "yes, in next session"):** fix the three 2026-11-13
-   follow-ups in TODO.md (one-line national-query gate; no-access notices for forbidden report URLs and
-   `/reviews`, matching `/users`). Type check + tests, quick live re-check, report done.
-2. At deploy: `ORG_LEVEL1_LABEL=County`, `ORG_LEVEL2_LABEL=Sub-county` in UAT/prod `.env`; existing
-   `monitor` users need a new role (plan → Hard to reverse). Then email plan (TODO.md).
+1. Get the user's go-ahead, then deploy `feat/role-model` to UAT: set `ORG_LEVEL1_LABEL=County`,
+   `ORG_LEVEL2_LABEL=Sub-county` in `.env`; existing `monitor` users need a new role (plan → Hard to
+   reverse). Then prod. Mark the plan done and archive it.
+2. Email plan (TODO.md).
 
 ## Gotchas
 
